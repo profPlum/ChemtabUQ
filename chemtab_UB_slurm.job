@@ -1,0 +1,24 @@
+#!/bin/bash
+#
+#SBATCH --time=00:01:00
+#SBATCH --nodes=2
+#SBATCH --threads-per-core=1    # do not use hyperthreads (i.e. CPUs = physical cores below)
+#SBATCH --cpus-per-task=5       # number of CPUs per process (we want extra for data loaders)
+#SBATCH --ntasks-per-node=2
+#SBATCH --gpus 4
+## #SBATCH --gpus-per-task=1       # number of GPUs per process
+## #SBATCH --gpu-bind=single:1     # bind each process to its own GPU (single:<tasks_per_gpu>)
+#SBATCH --mem=10000
+#SBATCH --job-name="ChemTab UQ Distributed"
+#SBATCH --output=ChemTab_UQ_Distributed.out
+#SBATCH --mail-user=dwyerdei@buffalo.edu
+#SBATCH --mail-type=end
+#SBATCH --partition=debug
+#SBATCH --qos=debug
+#SBATCH --cluster=ub-hpc
+
+#Let's start some work
+source /user/dwyerdei/.bash_profile
+conda activate pytorch_distributed_cuda3
+srun python ChemtabUQ.py --accelerator=gpu --strategy=ddp --gradient_clip_algorithm=value --gradient_clip_val 0.1
+#Let's finish some work
