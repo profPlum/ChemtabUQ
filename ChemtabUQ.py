@@ -102,10 +102,10 @@ class UQModel(pl.LightningModule):
 
 	def log_metrics(self, Y_pred, Y, prefix=''):
 		loss = F.mse_loss(Y_pred, Y)
-		self.log(prefix+'mse_loss', loss, sync_dist=True)
-		self.log(prefix+'R2_var_weighted', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'), sync_dist=True)
+		self.log(prefix+'mse_loss', loss)
+		self.log(prefix+'R2_var_weighted', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'))
 		self.log(prefix+'R2_avg', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'),sync_dist=True)
-		self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y), sync_dist=True)	
+		self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y))	
 
 	def training_step(self, training_batch, batch_id, log_prefix=''):
 		X, Y = training_batch
@@ -113,11 +113,11 @@ class UQModel(pl.LightningModule):
 		assert not (th.isnan(X).any() or th.isnan(Y).any())
 		loss = F.mse_loss(Y_pred, Y)
 		self.log_metrics(Y_pred, Y, log_prefix)	
+		return loss
 
 	# reuse training_step(), but log validation loss
 	def validation_step(self, val_batch, batch_id):
 		self.training_step(val_batch, batch_id, log_prefix='val_')
-		
 
 import os
 

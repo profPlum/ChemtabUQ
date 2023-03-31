@@ -12,7 +12,7 @@
 #SBATCH --ntasks-per-node=2     # This needs to match Trainer(devices=...), Also: it seems that GPU nodes have only 2 GPUs per node anyways...
 #SBATCH --gpus-per-node=2       # We need to request it "per-node" because pytorch needs visibility of all node's GPUs for some reason...
 #SBATCH --mem=50G
-#SBATCH --signal=SIGUSR1@90
+## #SBATCH --signal=SIGUSR1@90
 #SBATCH --nodes=8 # This needs to match Trainer(nodes=...)
 #SBATCH --time=01:00:00
 
@@ -32,7 +32,7 @@ diagnostic_CLI_args="--logger True --profiler simple --device-stats-monitor --de
 #diagnostic_CLI_args='--fast_dev_run 1000'
 #diagnostic_CLI_args=
 EXTRA_PL_ARGS1="$EXTRA_PL_ARGS $diagnostic_CLI_args" # NOTE: this should be an environment variable given by the user when submitting sbatch!!
-lightning_CLI_args="$EXTRA_PL_ARGS1 --num_nodes=$num_nodes --devices=2 --accelerator=gpu --strategy=ddp --gradient_clip_algorithm=value --gradient_clip_val 0.5"
+lightning_CLI_args="$EXTRA_PL_ARGS1 --num_nodes=$num_nodes --devices=2 --accelerator=gpu --strategy=ddp --gradient_clip_algorithm=value --gradient_clip_val 0.2"
 
 echo diagnostic_CLI_args: $diagnostic_CLI_args
 echo EXTRA_PL_ARGS: $EXTRA_PL_ARGS
