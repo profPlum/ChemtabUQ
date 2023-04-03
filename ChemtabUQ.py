@@ -55,7 +55,7 @@ class UQSamplesDataset(Dataset):
 
 	def __getitem__(self, idx):
 		(mu, sigma), outputs = self.moments_dataset[idx]
-		inputs = th.randn(*mu.shape)*sigma + mu
+		inputs = mu + th.randn(*mu.shape)*sigma
 		return inputs, outputs
 
 class UQErrorPredictionDataset(Dataset):
@@ -82,8 +82,10 @@ from pytorch_lightning.callbacks import DeviceStatsMonitor
 #trainer = Trainer(callbacks=[DeviceStatsMonitor()])
 # ^ example usage
 
+_default_learning_rate = 1e-4
+
 class UQModel(pl.LightningModule):
-	def __init__(self, input_size=53, output_size: int=None, n_layers=6, lr=1e-4, device_stats_monitor=False):
+	def __init__(self, input_size=53, output_size: int=None, n_layers=6, lr=_default_learning_rate, device_stats_monitor=False):
 		super().__init__()
 		if not output_size: output_size = input_size
 	
@@ -111,7 +113,7 @@ class UQModel(pl.LightningModule):
 	# sync dist makes metrics more accurate (by syncing across devices), but slows down training
 	def log_metrics(self, Y_pred, Y, prefix='', sync_dist=True):
 		loss = F.mse_loss(Y_pred, Y)
-		self.log(prefix+'mse_loss', loss,sync_dist=sync_dist)
+		self.log(prefix+'mse_loss', loss, sync_dist=sync_dist)
 		self.log(prefix+'R2_var_weighted', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'),sync_dist=sync_dist)
 		self.log(prefix+'R2_avg', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'),sync_dist=sync_dist)
 		self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)	
@@ -146,7 +148,9 @@ def make_data_loaders(dataset, batch_size=64, train_portion=0.8, workers=4, **kw
 def fit_UQ_model(dataset, name, trainer, **kwd_args):
 	train_loader, val_loader = make_data_loaders(dataset, **kwd_args)
 	x,y=next(iter(val_loader)) # hack to find dataset input size!
-	mean_regressor = UQModel(input_size=x.shape[1], output_size=y.shape[1], device_stats_monitor=kwd_args['device_stats_monitor'])
+	mean_regressor = UQModel(input_size=x.shape[1], output_size=y.shape[1],
+							 lr=_default_learning_rate*kwd_args['lr_coef'], 
+				    		 device_stats_monitor=kwd_args['device_stats_monitor'])
 	trainer.fit(mean_regressor, train_loader, val_loader)
 	with open(f'{name}.pt', 'wb') as f:
 		th.save(mean_regressor, f)
@@ -169,8 +173,8 @@ if __name__=='__main__':
 	moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
 	samples_dataset = UQSamplesDataset(moments_dataset)
 
-	# TODO: use pl.LightningDataModule, see this url: https://lightning.ai/docs/pytorch/stable/data/datamodule.html 
-	train_settings = {'batch_size': args.batch_size, 'workers': 4, 'device_stats_monitor': args.device_stats_monitor}
+	# TODO: use pl.LightningDataModule, see this url: https://lightning.ai/docs/pytorch/stable/data/datamodule.html
+	train_settings = {'batch_size': args.batch_size, 'workers': 4, 'lr_coef': int(args.num_nodes)*int(args.devices), 'device_stats_monitor': args.device_stats_monitor}
 	trainer = pl.Trainer.from_argparse_args(args)
 
 	mean_regressor = fit_UQ_model(samples_dataset, 'mean_regressor', trainer=trainer, **train_settings)
