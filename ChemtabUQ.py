@@ -1,3 +1,4 @@
+from sklearn.preprocessing import StandardScaler
 import torch as th
 from torch import nn
 import torch.nn.functional as F
@@ -7,7 +8,6 @@ import pandas as pd
 import numpy as np
 import torchmetrics.functional as F_metrics
 
-
 class UQMomentsDataset(Dataset):
 	""" Generic UQ Dataset which uses split-apply-combine on group_key to Produce UQ moments (mean & variance)"""
 	def __init__(self, csv_fn, inputs_like, outputs_like, group_key):
@@ -16,12 +16,20 @@ class UQMomentsDataset(Dataset):
 
 		valid_group_keys = df.groupby(group_key).std().dropna().index
 		mask = np.isin(df[group_key], valid_group_keys)
-		outs_df = inputs_df = df = df[mask] # mask df to remove all group keys with only 1 element (which gives nan std)
-		df.index=df[group_key]
+		df = df[mask] # mask df to remove all group keys with only 1 element (which gives nan std)
+		#df.index=df[group_key]
 		print('masked df len: ', len(df))
 
-		if inputs_like: inputs_df = df.filter(like=inputs_like)
-		if outputs_like: outs_df = df.filter(like=outputs_like)
+		def filter_and_scale(like):
+			scaler = StandardScaler()
+			subset_df = df.filter(like=like)
+			subset_df[:] = scaler.fit_transform(subset_df)
+			subset_df.index = df[group_key]
+			return subset_df, scaler			
+
+		inputs_df, self.input_scaler = filter_and_scale(inputs_like)
+		outs_df, self.output_scaler = filter_and_scale(outputs_like)
+
 		self.df_mu = th.Tensor(inputs_df.groupby(group_key).mean().values)
 		self.df_sigma = th.Tensor(inputs_df.groupby(group_key).std().values)
 		self.outs_df = th.Tensor(outs_df.groupby(group_key).mean().values)
@@ -75,11 +83,11 @@ from pytorch_lightning.callbacks import DeviceStatsMonitor
 # ^ example usage
 
 class UQModel(pl.LightningModule):
-	def __init__(self, input_size=53, output_size=None, n_layers=8, lr=1e-8, device_stats_monitor=False):
+	def __init__(self, input_size=53, output_size: int=None, n_layers=6, lr=1e-4, device_stats_monitor=False):
 		super().__init__()
 		if not output_size: output_size = input_size
 	
-		hidden_size = input_size*4	
+		hidden_size = input_size*2	
 		bulk_layers = []
 		for i in range(n_layers-1): # this should be safer then potentially copying layers by reference...
 			bulk_layers.extend([nn.SELU(), nn.Linear(hidden_size,hidden_size)])
@@ -100,12 +108,13 @@ class UQModel(pl.LightningModule):
 		& only way to do this with CLI is to use this hook"""
 		return [DeviceStatsMonitor()] if self.device_stats_monitor else []
 
-	def log_metrics(self, Y_pred, Y, prefix=''):
+	# sync dist makes metrics more accurate (by syncing across devices), but slows down training
+	def log_metrics(self, Y_pred, Y, prefix='', sync_dist=True):
 		loss = F.mse_loss(Y_pred, Y)
-		self.log(prefix+'mse_loss', loss)
-		self.log(prefix+'R2_var_weighted', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'))
-		self.log(prefix+'R2_avg', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'),sync_dist=True)
-		self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y))	
+		self.log(prefix+'mse_loss', loss,sync_dist=sync_dist)
+		self.log(prefix+'R2_var_weighted', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'),sync_dist=sync_dist)
+		self.log(prefix+'R2_avg', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'),sync_dist=sync_dist)
+		self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)	
 
 	def training_step(self, training_batch, batch_id, log_prefix=''):
 		X, Y = training_batch
@@ -127,7 +136,7 @@ def _get_split_sizes(full_dataset: Dataset, train_portion) -> tuple:
 	len_val = len_full - len_train
 	return len_train, len_val
 
-def make_data_loaders(dataset, batch_size=64, train_portion=0.8, workers=8, **kwd_args):
+def make_data_loaders(dataset, batch_size=64, train_portion=0.8, workers=4, **kwd_args):
 	train, val = random_split(dataset, _get_split_sizes(dataset, train_portion))#[train_portion, 1-train_portion])
 	get_batch_size = lambda df: len(df) if batch_size is None else batch_size
 	train_loader = DataLoader(train, batch_size=get_batch_size(train), num_workers=workers, shuffle=True)
@@ -151,8 +160,8 @@ if __name__=='__main__':
 	parser = pl.Trainer.add_argparse_args(parser)
 	parser.add_argument('--device-stats-monitor', action='store_true', 
 		help='Manually added CLI arg to support configuration of DeviceStatsMonitor() profiling (i.e. measuring utilization of GPUs). Turn on for more thorough profiling/troubleshooting.')
-	parser.add_argument('--dataset', default='chrest_rand10000.csv', help='dataset file name (should be inside the ~/data folder)')
-	parser.add_argument('--batch_size', default=500, help='total batch_size for the entire training process (i.e. across nodes), default (None) is entire dataset!')  
+	parser.add_argument('--dataset', default='chrest_contiguous_group_sample100k.csv', help='dataset file name (should be inside the ~/data folder)')
+	parser.add_argument('--batch_size', default=1000, type=int, help='total batch_size for the entire training process (i.e. across nodes), default (None) is entire dataset!')  
 	args = parser.parse_args()
 	
 	##################### Fit Mean Regressor: #####################
@@ -161,8 +170,7 @@ if __name__=='__main__':
 	samples_dataset = UQSamplesDataset(moments_dataset)
 
 	# TODO: use pl.LightningDataModule, see this url: https://lightning.ai/docs/pytorch/stable/data/datamodule.html 
-	# TODO: make batchs size bigger or dynamic...
-	train_settings = {'batch_size': args.batch_size, 'workers': 4, 'device_stats_monitor': args.device_stats_monitor}#, 'max_epochs': 100000, 'accelerator': 'horovod', 'gpus': 2} 
+	train_settings = {'batch_size': args.batch_size, 'workers': 4, 'device_stats_monitor': args.device_stats_monitor}
 	trainer = pl.Trainer.from_argparse_args(args)
 
 	mean_regressor = fit_UQ_model(samples_dataset, 'mean_regressor', trainer=trainer, **train_settings)
