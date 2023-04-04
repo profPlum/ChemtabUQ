@@ -47,15 +47,19 @@ class UQMomentsDataset(Dataset):
 
 class UQSamplesDataset(Dataset):
 	""" Wrapper for UQMomentsDataset which produces samples from the corresponding moments """
-	def __init__(self, moments_dataset):
+	def __init__(self, moments_dataset, constant=False):
 		self.moments_dataset = moments_dataset
+
+		# define sampling strategy (constant or random) 
+		self.sample = lambda mu, sigma: mu + th.randn(*mu.shape)*sigma
+		if constant: self.sample = lambda mu, sigma: mu
 
 	def __len__(self):
 		return len(self.moments_dataset)
 
 	def __getitem__(self, idx):
 		(mu, sigma), outputs = self.moments_dataset[idx]
-		inputs = mu + th.randn(*mu.shape)*sigma
+		inputs = self.sample(mu, sigma)
 		return inputs, outputs
 
 class UQErrorPredictionDataset(Dataset):
@@ -85,11 +89,11 @@ from pytorch_lightning.callbacks import DeviceStatsMonitor
 _default_learning_rate = 1e-4
 
 class UQModel(pl.LightningModule):
-	def __init__(self, input_size=53, output_size: int=None, n_layers=6, lr=_default_learning_rate, device_stats_monitor=False):
+	def __init__(self, input_size=53, output_size: int=None, n_layers=8, lr=_default_learning_rate, device_stats_monitor=False):
 		super().__init__()
 		if not output_size: output_size = input_size
 	
-		hidden_size = input_size*2	
+		hidden_size = input_size*4	
 		bulk_layers = []
 		for i in range(n_layers-1): # this should be safer then potentially copying layers by reference...
 			bulk_layers.extend([nn.SELU(), nn.Linear(hidden_size,hidden_size)])
@@ -166,12 +170,14 @@ if __name__=='__main__':
 		help='Manually added CLI arg to support configuration of DeviceStatsMonitor() profiling (i.e. measuring utilization of GPUs). Turn on for more thorough profiling/troubleshooting.')
 	parser.add_argument('--dataset', default='chrest_contiguous_group_sample100k.csv', help='dataset file name (should be inside the ~/data folder)')
 	parser.add_argument('--batch_size', default=1000, type=int, help='total batch_size for the entire training process (i.e. across nodes), default (None) is entire dataset!')  
+	parser.add_argument('--constant-training-data', action='store_true', 
+						help='experimental mode where constant training data is used for primary regressor then samples are taken afterward for UQ portion')
 	args = parser.parse_args()
 	
 	##################### Fit Mean Regressor: #####################
 	df_fn = f'{os.environ["HOME"]}/data/{args.dataset}'
 	moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
-	samples_dataset = UQSamplesDataset(moments_dataset)
+	samples_dataset = UQSamplesDataset(moments_dataset, constant=args.constant_training_data)
 
 	# TODO: use pl.LightningDataModule, see this url: https://lightning.ai/docs/pytorch/stable/data/datamodule.html
 	train_settings = {'batch_size': args.batch_size, 'workers': 4, 'lr_coef': int(args.num_nodes)*int(args.devices), 'device_stats_monitor': args.device_stats_monitor}
