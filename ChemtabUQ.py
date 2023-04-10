@@ -174,8 +174,7 @@ def fit_UQ_model(dataset, name, trainer, **kwd_args):
 		fig = lr_finder.plot(suggest=True)
 		fig.show()
 	trainer.fit(mean_regressor, train_loader, val_loader)
-	with open(f'{name}.pt', 'wb') as f:
-		th.save(mean_regressor, f)
+	trainer.save_checkpoint(f'{name}.ckpt')
 	print(f'done fitting {name}!')
 	return mean_regressor
 
