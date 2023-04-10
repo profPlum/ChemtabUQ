@@ -34,6 +34,9 @@ class UQMomentsDataset(Dataset):
 		self.df_sigma = th.Tensor(inputs_df.groupby(group_key).std().values)
 		self.outs_df = th.Tensor(outs_df.groupby(group_key).mean().values)
 
+		self.input_col_names = inputs_df.columns
+		self.output_col_names = outs_df.columns
+
 		print('reduced df len: ', self.df_sigma.shape[0])
 
 	def __len__(self):
@@ -51,8 +54,12 @@ class UQSamplesDataset(Dataset):
 		self.moments_dataset = moments_dataset
 
 		# define sampling strategy (constant or random) 
-		self.sample = lambda mu, sigma: mu + th.randn(*mu.shape)*sigma
-		if constant: self.sample = lambda mu, sigma: mu
+		#self.sample = lambda mu, sigma: mu + th.randn(*mu.shape)*sigma
+		#if constant: self.sample = lambda mu, sigma: mu
+		self.rand_coef = (int)(not constant)
+
+	def sample(self, mu, sigma):
+		return mu + th.randn(*mu.shape)*sigma*self.rand_coef
 
 	def __len__(self):
 		return len(self.moments_dataset)
@@ -99,7 +106,7 @@ class UQModel(pl.LightningModule):
 			bulk_layers.extend([nn.SELU(), nn.Linear(hidden_size,hidden_size)])
 		self.regressor = nn.Sequential(nn.BatchNorm1d(input_size),nn.Linear(input_size,hidden_size),*bulk_layers, nn.Linear(hidden_size, output_size)) 
 		# last layer is just to change size, doesn't count as a "layer" since it's linear
-		self.lr=lr
+		self.learning_rate=lr
 		self.device_stats_monitor=device_stats_monitor
 		# whether to profile GPU usage
 		
@@ -107,7 +114,7 @@ class UQModel(pl.LightningModule):
 		return self.regressor(inputs)
 
 	def configure_optimizers(self):
-		return th.optim.Adam(self.parameters(), lr=self.lr)
+		return th.optim.Adam(self.parameters(), lr=self.learning_rate)
 
 	def configure_callbacks(self):
 		"""We want to log accelerator usage statistics for profiling,
@@ -142,7 +149,7 @@ def _get_split_sizes(full_dataset: Dataset, train_portion) -> tuple:
 	len_val = len_full - len_train
 	return len_train, len_val
 
-def make_data_loaders(dataset, batch_size=64, train_portion=0.8, workers=4, **kwd_args):
+def make_data_loaders(dataset, batch_size, train_portion=0.8, workers=4, **kwd_args):
 	train, val = random_split(dataset, _get_split_sizes(dataset, train_portion))#[train_portion, 1-train_portion])
 	get_batch_size = lambda df: len(df) if batch_size is None else batch_size
 	train_loader = DataLoader(train, batch_size=get_batch_size(train), num_workers=workers, shuffle=True)
@@ -155,6 +162,17 @@ def fit_UQ_model(dataset, name, trainer, **kwd_args):
 	mean_regressor = UQModel(input_size=x.shape[1], output_size=y.shape[1],
 							 lr=_default_learning_rate*kwd_args['lr_coef'], 
 				    		 device_stats_monitor=kwd_args['device_stats_monitor'])
+	# TODO: make this work!!
+	if kwd_args['tune']:
+		raise NotImplemented('LR finder doesnt work yet')
+		lr_finder = trainer.tuner.lr_find(mean_regressor)
+
+		# Results can be found in
+		print(lr_finder.results)
+		
+		# Plot with
+		fig = lr_finder.plot(suggest=True)
+		fig.show()
 	trainer.fit(mean_regressor, train_loader, val_loader)
 	with open(f'{name}.pt', 'wb') as f:
 		th.save(mean_regressor, f)
@@ -169,9 +187,10 @@ if __name__=='__main__':
 	parser.add_argument('--device-stats-monitor', action='store_true', 
 		help='Manually added CLI arg to support configuration of DeviceStatsMonitor() profiling (i.e. measuring utilization of GPUs). Turn on for more thorough profiling/troubleshooting.')
 	parser.add_argument('--dataset', default='chrest_contiguous_group_sample100k.csv', help='dataset file name (should be inside the ~/data folder)')
-	parser.add_argument('--batch_size', default=1000, type=int, help='total batch_size for the entire training process (i.e. across nodes), default (None) is entire dataset!')  
+	parser.add_argument('--batch_size', default=1000, type=int, help='batch_size per GPU')  
 	parser.add_argument('--constant-training-data', action='store_true', 
-						help='experimental mode where constant training data is used for primary regressor then samples are taken afterward for UQ portion')
+						help='Experimental mode where constant training data is used for primary regressor then samples are taken afterward for UQ portion.')
+	parser.add_argument('--tune', action='store_true', help='Whether to turn on tuner or not.')
 	args = parser.parse_args()
 	
 	##################### Fit Mean Regressor: #####################
@@ -180,7 +199,10 @@ if __name__=='__main__':
 	samples_dataset = UQSamplesDataset(moments_dataset, constant=args.constant_training_data)
 
 	# TODO: use pl.LightningDataModule, see this url: https://lightning.ai/docs/pytorch/stable/data/datamodule.html
-	train_settings = {'batch_size': args.batch_size, 'workers': 4, 'lr_coef': int(args.num_nodes)*int(args.devices), 'device_stats_monitor': args.device_stats_monitor}
+	train_settings = {'batch_size': args.batch_size, 'workers': 4, 
+					  'lr_coef': int(args.num_nodes)*int(args.devices),
+					  'device_stats_monitor': args.device_stats_monitor,
+					  'tune': args.tune}
 	trainer = pl.Trainer.from_argparse_args(args)
 
 	mean_regressor = fit_UQ_model(samples_dataset, 'mean_regressor', trainer=trainer, **train_settings)
