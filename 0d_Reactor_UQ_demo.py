@@ -1,14 +1,16 @@
 from ChemtabUQ import *
 
-sample_from_uncertainty=False
+#sample_from_uncertainty=False
 
 df_fn = f'./data/chrest_contiguous_group_sample100k.csv'
 moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
 
+import random
+
 # get ICs
-(mu, sigma), outs = moments_dataset[0]
-Yi_state=mu + th.randn(*sigma.shape)*sigma*sample_from_uncertainty
-Yi_sigma=sigma
+(mu, sigma), outs = random.choice(moments_dataset)
+Yi_state=mu.reshape(1,-1) #+ th.randn(*sigma.shape)*sigma*sample_from_uncertainty
+Yi_var=(sigma**2).reshape(1,-1)
 
 n_Yi = mu.shape[0]
 assert n_Yi == 53
@@ -19,31 +21,16 @@ std_regressor = UQModel.load_from_checkpoint('std_regressor.ckpt', input_size=n_
 mean_regressor.eval()
 std_regressor.eval()
 
-n_time_steps = 100
+n_time_steps=100
 step_multiplier=100 # gives higher accuracy without slowing animation
 dt = 1e-2 # TODO: make much smaller
-
-#class TransWrapModel(pl.LightningModule):
-#	def __init__(self, pl_module, input_trans, output_trans):
-#		super().__init__()
-#		self.input_trans = input_trans
-#		self.output_trans = output_trans
-#		self._module = pl_module
-#	def forward(self, inputs):
-#		inputs = th.from_numpy(self.input_trans.transform(inputs.detach().numpy()))
-#		outputs = th.from_numpy(self.output_trans.inverse_transform(self._module(inputs).numpy()))
-#		return outputs
-
-# TODO: have this automatically store uncertainty information & accumulate it via VAR(X+Y)=VAR(X)+VAR(Y)
-#class UQ_tensor
 
 import plotly.express as px
 import matplotlib.pyplot as plt
 import pandas as pd
 
-#mean_regressor = TransWrapModel(mean_regressor, moments_dataset.input_scaler, moments_dataset.output_scaler)
-
-df = pd.DataFrame(columns=moments_dataset.input_col_names)
+df_state = pd.DataFrame(columns=moments_dataset.input_col_names)
+df_SE = pd.DataFrame(columns=moments_dataset.input_col_names)
 
 def constrain_state(Yi_state):
 	Yi_state = np.maximum(Yi_state, 0)
@@ -54,30 +41,40 @@ def constrain_state(Yi_state):
 import warnings
 warnings.simplefilter("ignore")
 for i in range(n_time_steps*step_multiplier):
-	Yi_dot = mean_regressor(Yi_state.reshape(1,-1)).squeeze().detach()
+	Yi_dot = mean_regressor(Yi_state).detach()
 	Yi_state += Yi_dot*dt
+
+	# scale the SE by the dt coef then convert to variance for VAR(X+Y)=VAR(X)+VAR(Y)
+	Yi_var += (std_regressor(th.cat([Yi_state, Yi_var],axis=1)).detach()*dt)**2
 
 	if i%step_multiplier==0: # log interval is determined by original steps
 		Yi_state_pd = Yi_state.numpy()
 		Yi_state_pd = moments_dataset.input_scaler.inverse_transform(Yi_state_pd.reshape(1,-1))
 		Yi_state_pd = constrain_state(Yi_state_pd)
-		Yi_state = th.from_numpy(moments_dataset.input_scaler.transform(Yi_state_pd).squeeze())
+		Yi_state = th.from_numpy(moments_dataset.input_scaler.transform(Yi_state_pd))
 		# apply constraint back to state!
+
+		# convert to SE then scale with scaler
+		Yi_SE_pd = pd.Series((Yi_var**(1/2)*moments_dataset.input_scaler.scale_).squeeze(), index=moments_dataset.input_col_names)
+		df_SE.loc[i//step_multiplier]=Yi_SE_pd
+
 		Yi_state_pd = pd.Series(Yi_state_pd.squeeze(), index=moments_dataset.input_col_names)
-		df.loc[i//step_multiplier]=Yi_state_pd
+		df_state.loc[i//step_multiplier]=Yi_state_pd
 
-
-	#Yi_state_pd.plot(kind='bar')
-	#plt.show()
-
-	#Yi_dot_std = std_regressor()
-
-df['id'] = df.index
-print(df)
+df_state['id'] = df_state.index
+df_SE['id'] = df_SE.index
+print(df_state)
 # Example: pd.wide_to_long(df, stubnames='ht', i=['famid', 'birth'], j='age')
-df_long = pd.wide_to_long(df, stubnames=['Yi'], i='id', j='Yi_name', suffix='.+')
+df_long = pd.wide_to_long(df_state, stubnames=['Yi'], i='id', j='Yi_name', suffix='.+')
+df_long_SE = pd.wide_to_long(df_SE, stubnames=['Yi'], i='id', j='Yi_name', suffix='.+')
+df_long_SE['Yi_SE']=df_long_SE['Yi']
+del df_long_SE['Yi']
+
+df_long = pd.concat([df_long,df_long_SE],axis=1)
+
+#df_long_SE = df_long_SE.reset_index() # merges multi-index into the columns
 df_long = df_long.reset_index() # merges multi-index into the columns
 
 print(df_long)
-fig = px.bar(df_long, x="Yi_name", y="Yi", animation_frame="id")#, animation_group="country")
+fig = px.bar(df_long, x="Yi_name", y="Yi", animation_frame="id", error_y='Yi_SE', title='0d Reactor Chemtab UQ Demo (NOTICE: UQ Error Bars)')#, animation_group="country")
 fig.show()
