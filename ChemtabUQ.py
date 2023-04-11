@@ -47,15 +47,10 @@ class UQMomentsDataset(Dataset):
 		outputs = self.outs_df[idx,:]
 		return (self.df_mu[idx,:], self.df_sigma[idx,:]), outputs
 
-
 class UQSamplesDataset(Dataset):
 	""" Wrapper for UQMomentsDataset which produces samples from the corresponding moments """
 	def __init__(self, moments_dataset, constant=False):
 		self.moments_dataset = moments_dataset
-
-		# define sampling strategy (constant or random) 
-		#self.sample = lambda mu, sigma: mu + th.randn(*mu.shape)*sigma
-		#if constant: self.sample = lambda mu, sigma: mu
 		self.rand_coef = (int)(not constant)
 
 	def sample(self, mu, sigma):
@@ -69,25 +64,36 @@ class UQSamplesDataset(Dataset):
 		inputs = self.sample(mu, sigma)
 		return inputs, outputs
 
+# TODO: this should take MULTIPLE samples per distribution then get the SE for the entire distribution & save that as training target!
+# you can do this partially by using split-apply-combine with pandas
 class UQErrorPredictionDataset(Dataset):
-	def __init__(self, target_model, moments_dataset):
+	def __init__(self, target_model, moments_dataset, samples_per_distribution=30):
 		self.target_model = target_model
 		self.moments_dataset = moments_dataset
 		self.sampling_dataset = UQSamplesDataset(moments_dataset)
 
-		input_samples, outputs = self.sampling_dataset[:]
-		preds = self.target_model(input_samples)
-		self.abs_err_model = th.abs(preds-outputs).detach()
+		# NOTE: idea is for each UQ distribution we sample n=samples_per_distribution times
+		# then we derive SE from accumulated SSE. This is better than MAE because we can assume
+		# that errors are i.i.d which lets us compute total uncertainty during demo 
+		# P.S. this slick addition method lets us avoid using groupby! groups are implicitly positions!
+
+		self.SE_model = 0 # dummy value to be replaced by matrix
+		for i in range(samples_per_distribution):
+			input_samples, outputs = self.sampling_dataset[:]
+			preds = self.target_model(input_samples)
+			self.SE_model = self.SE_model + ((preds-outputs)**2).detach()
+			# accumulate SSE, NOTE: VAR(X+Y)=VAR(X)+VAR(Y) | X indep Y
+	
+		self.SE_model /= samples_per_distribution # derive MSE
+		self.SE_model = self.SE_model**(1/2)
+		
 
 	def __len__(self):
 		return len(self.moments_dataset)
 	
 	def __getitem__(self, index):
 		(mu, sigma), outputs = self.moments_dataset[index]
-		#input_samples, outputs = self.sampling_dataset[index]
-		#preds = self.target_model(input_samples.view(1,-1))
-		#abs_err = th.abs(preds-outputs)
-		return	th.cat((mu, sigma), axis=-1), self.abs_err_model[index]
+		return	th.cat((mu, sigma), axis=-1), self.SE_model[index]
 
 from pytorch_lightning.callbacks import DeviceStatsMonitor
 #trainer = Trainer(callbacks=[DeviceStatsMonitor()])
@@ -96,7 +102,7 @@ from pytorch_lightning.callbacks import DeviceStatsMonitor
 _default_learning_rate = 1e-4
 
 class UQModel(pl.LightningModule):
-	def __init__(self, input_size=53, output_size: int=None, n_layers=8, lr=_default_learning_rate, device_stats_monitor=False):
+	def __init__(self, input_size, output_size: int=None, n_layers=8, lr=_default_learning_rate, device_stats_monitor=False):
 		super().__init__()
 		if not output_size: output_size = input_size
 	
@@ -208,6 +214,9 @@ if __name__=='__main__':
 	#########################################################################
 	
 	##################### Fit Standard Deviation Regressor: #####################
+	
 	STD_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
-	mean_regressor = fit_UQ_model(STD_dataset, 'std_regressor', trainer=trainer, **train_settings)
+	del trainer
+	trainer = pl.Trainer.from_argparse_args(args)
+	std_regressor = fit_UQ_model(STD_dataset, 'std_regressor', trainer=trainer, **train_settings)
 	#########################################################################
