@@ -85,7 +85,7 @@ class UQErrorPredictionDataset(Dataset):
 			# accumulate SSE, NOTE: VAR(X+Y)=VAR(X)+VAR(Y) | X indep Y
 	
 		self.SE_model /= samples_per_distribution # derive MSE
-		self.SE_model = self.SE_model**(1/2)
+		self.SE_model = self.SE_model**(1/2) # sqrt(sigma^2)=sigma
 		
 
 	def __len__(self):
@@ -99,7 +99,7 @@ from pytorch_lightning.callbacks import DeviceStatsMonitor
 #trainer = Trainer(callbacks=[DeviceStatsMonitor()])
 # ^ example usage
 
-_default_learning_rate = 1e-4
+_default_learning_rate = 1e-5
 
 class UQModel(pl.LightningModule):
 	def __init__(self, input_size, output_size: int=None, n_layers=8, lr=_default_learning_rate, device_stats_monitor=False):

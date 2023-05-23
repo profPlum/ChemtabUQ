@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --job-name="ChemTab UQ Distributed"
+#SBATCH --job-name="ChemTab UQ Distributed-Debug"
 #SBATCH --output=ChemTab_UQ_Distributed.out
 #SBATCH --mail-user=dwyerdei@buffalo.edu
 #SBATCH --mail-type=end
