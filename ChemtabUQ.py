@@ -186,6 +186,7 @@ if __name__=='__main__':
 	parser.add_argument('--batch_size', default=1000, type=int, help='batch_size per GPU')  
 	#parser.add_argument('--constant-training-data', action='store_true', 
 	#					help='Experimental mode where constant training data is used for primary regressor then samples are taken afterward for UQ portion.')
+	parser.set_defaults(devices=1)
 	args = parser.parse_args()
 	
 	##################### Fit Mean Regressor: #####################

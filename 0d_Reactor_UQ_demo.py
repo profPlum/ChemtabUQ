@@ -16,7 +16,7 @@ n_Yi = mu.shape[0]
 assert n_Yi == 53
 
 #mean_regressor = UQModel.load_from_checkpoint('mean_regressor.ckpt', input_size=n_Yi).cpu()
-mean_regressor = TF2PL_chemtab_wrapper.wrap_mean_regressor('./ablate-filtered-97%R2-decoupled')
+mean_regressor = TF2PL_chemtab_wrapper.wrap_mean_regressor('./PCDNNV2_decomp_ablate-filtered-97%R2')
 TF2PL_chemtab_wrapper.check_Yi_consistency(moments_dataset.input_data_cols)
 std_regressor = UQModel.load_from_checkpoint('std_regressor.ckpt', input_size=n_Yi*2, output_size=n_Yi).cpu()
 

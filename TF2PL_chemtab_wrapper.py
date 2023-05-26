@@ -20,9 +20,9 @@ def wrap_mean_regressor(model_dir: str):
     wrap_mean_regressor.weight_mat = weight_mat
 
     global Yi_names
-    Yi_names=tuple(weight_mat.index)
+    Yi_names=tuple(['Yi'+species_name for species_name in weight_mat.index])
     
-    # same as in simulation
+	# same as in simulation
     def mean_regressor(Yi_inputs: th.Tensor, dt=1e-2):
         # TODO: sanity check that the species are in the correct order!!
         Zmix_and_CPVs=Yi_inputs.cpu().numpy().dot(weight_mat) # Zmix should be at position 0
@@ -43,10 +43,6 @@ def wrap_mean_regressor(model_dir: str):
         return th.from_numpy(Yi_sources).to(Yi_inputs.device)
     return mean_regressor
 
-def check_Yi_consistency(other_Yi_names):
-    global Yi_names
-    assert tuple(other_Yi_names)==tuple(Yi_names), "Yi Species names are inconsistent!!"
-
 #def wrap_mean_regressor(model_dir: str):
 #    model, weight_mat = _load_mean_regressor(model_dir+'/regressor')
 #    wrap_mean_regressor.model = model
@@ -62,3 +58,9 @@ def check_Yi_consistency(other_Yi_names):
 #        assert type(outputs) is np.ndarray
 #        return th.from_numpy(outputs).to(Yi_inputs.device)
 #    return mean_regressor
+
+def check_Yi_consistency(data_Yi_names):
+    global Yi_names
+    print('data_Yi_names: ', tuple(data_Yi_names), flush=True)
+    print('weight_mat_Yi_names: ', tuple(Yi_names), flush=True)
+    assert tuple(data_Yi_names)==tuple(Yi_names), "Yi Species names are inconsistent!!"
