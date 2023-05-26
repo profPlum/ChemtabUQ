@@ -10,20 +10,21 @@ import torchmetrics.functional as F_metrics
 
 class UQMomentsDataset(Dataset):
 	""" Generic UQ Dataset which uses split-apply-combine on group_key to Produce UQ moments (mean & variance)"""
-	def __init__(self, csv_fn, inputs_like, outputs_like, group_key):
+	def __init__(self, csv_fn, inputs_like, outputs_like, group_key, scale=False):
 		df = pd.read_csv(csv_fn)
 		print('original df len: ', len(df))
 
 		valid_group_keys = df.groupby(group_key).std().dropna().index
 		mask = np.isin(df[group_key], valid_group_keys)
 		df = df[mask] # mask df to remove all group keys with only 1 element (which gives nan std)
-		#df.index=df[group_key]
 		print('masked df len: ', len(df))
 
 		def filter_and_scale(like):
-			scaler = StandardScaler()
+			scaler = None
 			subset_df = df.filter(like=like)
-			subset_df[:] = scaler.fit_transform(subset_df)
+			if scale:
+				scaler = StandardScaler()
+				subset_df[:] = scaler.fit_transform(subset_df)
 			subset_df.index = df[group_key]
 			return subset_df, scaler			
 
@@ -165,26 +166,16 @@ def make_data_loaders(dataset, batch_size, train_portion=0.8, workers=4, **kwd_a
 def fit_UQ_model(dataset, name, trainer, **kwd_args):
 	train_loader, val_loader = make_data_loaders(dataset, **kwd_args)
 	x,y=next(iter(val_loader)) # hack to find dataset input size!
-	mean_regressor = UQModel(input_size=x.shape[1], output_size=y.shape[1],
-							 lr=_default_learning_rate*kwd_args['lr_coef'], 
-				    		 device_stats_monitor=kwd_args['device_stats_monitor'])
-	# TODO: make this work!!
-	if kwd_args['tune']:
-		raise NotImplemented('LR finder doesnt work yet')
-		lr_finder = trainer.tuner.lr_find(mean_regressor)
-
-		# Results can be found in
-		print(lr_finder.results)
-		
-		# Plot with
-		fig = lr_finder.plot(suggest=True)
-		fig.show()
-	trainer.fit(mean_regressor, train_loader, val_loader)
+	regressor = UQModel(input_size=x.shape[1], output_size=y.shape[1],
+						lr=_default_learning_rate*kwd_args['lr_coef'],
+				    	device_stats_monitor=kwd_args['device_stats_monitor'])
+	trainer.fit(regressor, train_loader, val_loader)
 	trainer.save_checkpoint(f'{name}.ckpt')
 	print(f'done fitting {name}!')
-	return mean_regressor
+	return regressor
 
 from argparse import ArgumentParser
+import TF2PL_chemtab_wrapper
 
 if __name__=='__main__':
 	parser = ArgumentParser()
@@ -193,30 +184,29 @@ if __name__=='__main__':
 		help='Manually added CLI arg to support configuration of DeviceStatsMonitor() profiling (i.e. measuring utilization of GPUs). Turn on for more thorough profiling/troubleshooting.')
 	parser.add_argument('--dataset', default='chrest_contiguous_group_sample100k.csv', help='dataset file name (should be inside the ~/data folder)')
 	parser.add_argument('--batch_size', default=1000, type=int, help='batch_size per GPU')  
-	parser.add_argument('--constant-training-data', action='store_true', 
-						help='Experimental mode where constant training data is used for primary regressor then samples are taken afterward for UQ portion.')
-	parser.add_argument('--tune', action='store_true', help='Whether to turn on tuner or not.')
+	#parser.add_argument('--constant-training-data', action='store_true', 
+	#					help='Experimental mode where constant training data is used for primary regressor then samples are taken afterward for UQ portion.')
 	args = parser.parse_args()
 	
 	##################### Fit Mean Regressor: #####################
 	df_fn = f'{os.environ["HOME"]}/data/{args.dataset}'
-	moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
-	samples_dataset = UQSamplesDataset(moments_dataset, constant=args.constant_training_data)
+	moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group', scale=False)
+	#samples_dataset = UQSamplesDataset(moments_dataset, constant=args.constant_training_data)
 
 	# TODO: use pl.LightningDataModule, see this url: https://lightning.ai/docs/pytorch/stable/data/datamodule.html
 	train_settings = {'batch_size': args.batch_size, 'workers': 4, 
 					  'lr_coef': int(args.num_nodes)*int(args.devices),
-					  'device_stats_monitor': args.device_stats_monitor,
-					  'tune': args.tune}
+					  'device_stats_monitor': args.device_stats_monitor}
 	trainer = pl.Trainer.from_argparse_args(args)
 
-	mean_regressor = fit_UQ_model(samples_dataset, 'mean_regressor', trainer=trainer, **train_settings)
+	mean_regressor = TF2PL_chemtab_wrapper.wrap_mean_regressor('./PCDNNV2_decomp')
+	#mean_regressor = fit_UQ_model(samples_dataset, 'mean_regressor', trainer=trainer, **train_settings)
 	#########################################################################
 	
 	##################### Fit Standard Deviation Regressor: #####################
 	
 	STD_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
-	del trainer
-	trainer = pl.Trainer.from_argparse_args(args)
+	#del trainer
+	#trainer = pl.Trainer.from_argparse_args(args)
 	std_regressor = fit_UQ_model(STD_dataset, 'std_regressor', trainer=trainer, **train_settings)
 	#########################################################################
