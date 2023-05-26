@@ -15,8 +15,8 @@ Yi_var=(sigma**2).reshape(1,-1)
 n_Yi = mu.shape[0]
 assert n_Yi == 53
 
-mean_regressor = UQModel.load_from_checkpoint('mean_regressor.ckpt', input_size=n_Yi).cpu()
-std_regressor = UQModel.load_from_checkpoint('std_regressor.ckpt', input_size=n_Yi*2, output_size=n_Yi).cpu()
+mean_regressor = FFRegressor.load_from_checkpoint('mean_regressor.ckpt', input_size=n_Yi).cpu()
+std_regressor = FFRegressor.load_from_checkpoint('std_regressor.ckpt', input_size=n_Yi*2, output_size=n_Yi).cpu()
 
 mean_regressor.eval()
 std_regressor.eval()
