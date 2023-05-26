@@ -28,7 +28,6 @@ def wrap_mean_regressor(model_dir: str):
         assert type(outputs) is np.ndarray
         return th.from_numpy(outputs).to(Yi_inputs.device)
     return mean_regressor
-regressor = wrap_mean_regressor(f'{os.environ["HOME"]}/Desktop/ChemtabUQ/PCDNNV2_decomp/regressor')
 
 def check_Yi_consistency(other_Yi_names):
     global Yi_names

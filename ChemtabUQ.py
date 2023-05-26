@@ -191,6 +191,7 @@ if __name__=='__main__':
 	##################### Fit Mean Regressor: #####################
 	df_fn = f'{os.environ["HOME"]}/data/{args.dataset}'
 	moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group', scale=False)
+	TF2PL_chemtab_wrapper.check_Yi_consistency(moments_dataset.input_col_names)
 	#samples_dataset = UQSamplesDataset(moments_dataset, constant=args.constant_training_data)
 
 	# TODO: use pl.LightningDataModule, see this url: https://lightning.ai/docs/pytorch/stable/data/datamodule.html
@@ -199,7 +200,7 @@ if __name__=='__main__':
 					  'device_stats_monitor': args.device_stats_monitor}
 	trainer = pl.Trainer.from_argparse_args(args)
 
-	mean_regressor = TF2PL_chemtab_wrapper.wrap_mean_regressor('./PCDNNV2_decomp')
+	mean_regressor = TF2PL_chemtab_wrapper.wrap_mean_regressor('./PCDNNV2_decomp_ablate-filtered-97%R2')
 	#mean_regressor = fit_UQ_model(samples_dataset, 'mean_regressor', trainer=trainer, **train_settings)
 	#########################################################################
 	
