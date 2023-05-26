@@ -13,6 +13,7 @@ def _load_mean_regressor(model_fn: str):
     print(weight_mat)
     return model, weight_mat
 
+Yi_names=None
 def wrap_mean_regressor(model_dir: str):
     model, weight_mat = _load_mean_regressor(model_dir+'/regressor')
     wrap_mean_regressor.model = model
