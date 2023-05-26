@@ -15,7 +15,8 @@ Yi_var=(sigma**2).reshape(1,-1)
 n_Yi = mu.shape[0]
 assert n_Yi == 53
 
-mean_regressor = UQModel.load_from_checkpoint('mean_regressor.ckpt', input_size=n_Yi).cpu()
+#mean_regressor = UQModel.load_from_checkpoint('mean_regressor.ckpt', input_size=n_Yi).cpu()
+mean_regressor = TF2PL_chemtab_wrapper.wrap_mean_regressor('./ablate-filtered-97%R2-decoupled')
 std_regressor = UQModel.load_from_checkpoint('std_regressor.ckpt', input_size=n_Yi*2, output_size=n_Yi).cpu()
 
 mean_regressor.eval()
@@ -49,13 +50,13 @@ for i in range(n_time_steps*step_multiplier):
 
 	if i%step_multiplier==0: # log interval is determined by original steps
 		Yi_state_pd = Yi_state.numpy()
-		Yi_state_pd = moments_dataset.input_scaler.inverse_transform(Yi_state_pd.reshape(1,-1))
+		Yi_state_pd = Yi_state_pd.reshape(1,-1)
 		Yi_state_pd = constrain_state(Yi_state_pd)
-		Yi_state = th.from_numpy(moments_dataset.input_scaler.transform(Yi_state_pd))
+		Yi_state = th.from_numpy(Yi_state_pd.numpy())
 		# apply constraint back to state!
 
 		# convert to SE then scale with scaler
-		Yi_SE_pd = pd.Series((Yi_var**(1/2)*moments_dataset.input_scaler.scale_).squeeze(), index=moments_dataset.input_col_names)
+		Yi_SE_pd = pd.Series((Yi_var**(1/2)).squeeze(), index=moments_dataset.input_col_names)
 		df_SE.loc[i//step_multiplier]=Yi_SE_pd
 
 		Yi_state_pd = pd.Series(Yi_state_pd.squeeze(), index=moments_dataset.input_col_names)
