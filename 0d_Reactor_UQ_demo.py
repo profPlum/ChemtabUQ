@@ -4,6 +4,7 @@ from ChemtabUQ import *
 
 df_fn = f'./data/chrest_contiguous_group_sample100k.csv'
 moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
+TF2PL_chemtab_wrapper.check_Yi_consistency(moments_dataset.input_data_cols)
 
 import random
 
