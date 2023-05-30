@@ -1,15 +1,15 @@
 from ChemtabUQ import *
 
-#sample_from_uncertainty=False
+sample_from_uncertainty=True
 
-df_fn = f'./data/chrest_contiguous_group_sample100k.csv'
+df_fn = './data/chrest_contiguous_group_sample100k.csv'
 moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
 
 import random
 
 # get ICs
 (mu, sigma), outs = random.choice(moments_dataset)
-Yi_state=mu.reshape(1,-1) #+ th.randn(*sigma.shape)*sigma*sample_from_uncertainty
+Yi_state=mu.reshape(1,-1) + th.randn(*sigma.shape)*sample_from_uncertainty*0.05
 Yi_var=(sigma**2).reshape(1,-1)
 
 n_Yi = mu.shape[0]
@@ -17,10 +17,10 @@ assert n_Yi == 53
 
 #mean_regressor = UQModel.load_from_checkpoint('mean_regressor.ckpt', input_size=n_Yi).cpu()
 mean_regressor = TF2PL_chemtab_wrapper.wrap_mean_regressor('./PCDNNV2_decomp_ablate-filtered-97%R2')
-TF2PL_chemtab_wrapper.check_Yi_consistency(moments_dataset.input_data_cols)
+#TF2PL_chemtab_wrapper.check_Yi_consistency(moments_dataset.input_col_names)
 std_regressor = UQModel.load_from_checkpoint('std_regressor.ckpt', input_size=n_Yi*2, output_size=n_Yi).cpu()
 
-mean_regressor.eval()
+#mean_regressor.model.eval()
 std_regressor.eval()
 
 n_time_steps=100
@@ -53,7 +53,7 @@ for i in range(n_time_steps*step_multiplier):
 		Yi_state_pd = Yi_state.numpy()
 		Yi_state_pd = Yi_state_pd.reshape(1,-1)
 		Yi_state_pd = constrain_state(Yi_state_pd)
-		Yi_state = th.from_numpy(Yi_state_pd.numpy())
+		Yi_state = th.from_numpy(Yi_state_pd)
 		# apply constraint back to state!
 
 		# convert to SE then scale with scaler
