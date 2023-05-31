@@ -111,13 +111,12 @@ class UQErrorPredictionDataset(Dataset):
 
 class FFRegressor(pl.LightningModule):
 	# TODO: integrate data module class so that this doesn't need a hack for input/output sizes (just pass in dataset)
-	# ^ Nope! Don't do this! Instead just use linked arguments obviouslly
+	# ^ Nope! Don't do this! Instead just use linked arguments obviously
 	def __init__(self, input_size: int, output_size: int=None, n_layers: int=8, 
 	      		learning_rate: float=1e-4, lr_coef: float=1.0,
 				device_stats_monitor=False):
 		"""
-		UQModel Module, primarily for UQ but also is
-		used for primary regressor (just a simple change of dataset).
+		Just a simple FF Network that scales
 
 		:param input_size: NN input size
 		:param output_size: NN output size
@@ -271,24 +270,24 @@ if __name__=='__main__':
 	#	help='Manually added CLI arg to support configuration of DeviceStatsMonitor() profiling (i.e. measuring utilization of GPUs). Turn on for more thorough profiling/troubleshooting.')
 	#parser.add_argument('--dataset', default='chrest_contiguous_group_sample100k.csv', help='dataset file name (should be inside the ~/data folder)')
 	#parser.add_argument('--batch_size', default=1000, type=int, help='batch_size per GPU') # TODO: remove since this should be redundant??
-	parser.add_argument('--constant-training-data', action='store_true',  # TODO: consider removing this since it seems like it doesn't even make sense to have anymore?
-						help='Experimental mode where constant training data is used for primary regressor then samples are taken afterward for UQ portion.')
+	#parser.add_argument('--constant-training-data', action='store_true',  # TODO: consider removing this since it seems like it doesn't even make sense to have anymore?
+	#					help='Experimental mode where constant training data is used for primary regressor then samples are taken afterward for UQ portion.')
 	parser.add_lightning_class_args(pl.Trainer, 'Trainer')
 	parser.add_lightning_class_args(UQ_DataModule, 'DataModule') # does this even make sense?? How does it have the non-trivial Dataset Argument?? Fuck it lets try it!
 	parser.add_lightning_class_args(FFRegressor, 'FFRegressor')
 	dataset_fact_args = parser.add_function_arguments(DataSet_factory, 'DataSet_factory')
-	parser.link_arguments(dataset_fact_args, 'UQ_DataModule.dataset', compute_fn=DataSet_factory)
-	parser.link_arguments(['Trainer.devices', 'Trainer.num_nodes'], 'FFRegressor.lr_coef', compute_fn=lambda devices, num_nodes: int(num_nodes)*int(devices))
-	parser.link_arguments(['UQ_DataModule.dataset'], 'FFRegressor.input_size', compute_fn=lambda dataset: next(iter(dataset))[0].shape[1])
-	parser.link_arguments(['UQ_DataModule.dataset'], 'FFRegressor.output_size', compute_fn=lambda dataset: next(iter(dataset))[1].shape[1])
+	parser.link_arguments(dataset_fact_args, 'UQ_DataModule.dataset', compute_fn=DataSet_factory, apply_on='parse')
+	parser.link_arguments(['UQ_DataModule.dataset'], 'FFRegressor.input_size', compute_fn=lambda dataset: next(iter(dataset))[0].shape[1], apply_on='parse')
+	parser.link_arguments(['UQ_DataModule.dataset'], 'FFRegressor.output_size', compute_fn=lambda dataset: next(iter(dataset))[1].shape[1], apply_on='parse')
+	parser.link_arguments(['Trainer.devices', 'Trainer.num_nodes'], 'FFRegressor.lr_coef', compute_fn=lambda devices, num_nodes: int(num_nodes)*int(devices), apply_on='parse')
 	args = parser.parse_args()
-	
-	##################### Fit Mean Regressor: #####################
-	df_fn = f'{os.environ["HOME"]}/data/{args.dataset}'
-	moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
-	samples_dataset = UQSamplesDataset(moments_dataset, constant=args.constant_training_data)
 
-	samples_data_module = UQ_DataModule(samples_dataset, **vars(args.DataModule))
+	##################### Fit Mean Regressor: #####################
+	#df_fn = f'{os.environ["HOME"]}/data/{args.dataset}'
+	#moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
+	#samples_dataset = UQSamplesDataset(moments_dataset, constant=args.constant_training_data)
+	#samples_data_module = UQ_DataModule(samples_dataset, **vars(args.DataModule))
+	samples_data_module = UQ_DataModule(**vars(args.DataModule))
 
 	# TODO: use pl.LightningDataModule, see this url: https://lightning.ai/docs/pytorch/stable/data/datamodule.html
 	#train_settings = {'batch_size': args.batch_size, 'workers': 4, # these should be from LightningCLI args directly
@@ -299,11 +298,11 @@ if __name__=='__main__':
 	mean_regressor = fit_UQ_model('mean_regressor', trainer, mean_regressor, samples_data_module)
 	#########################################################################
 	
-	##################### Fit Standard Deviation Regressor: #####################
-	
-	STD_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
-	#del trainer # I'm sorry why do this??
-	#trainer = pl.Trainer.from_argparse_args(args) 
-	std_regressor = FFRegressor(**vars(args.FFRegressor))
-	std_regressor = fit_UQ_model('std_regressor', trainer, std_regressor, STD_dataset)
-	#########################################################################
+	###################### Fit Standard Deviation Regressor: #####################
+	#
+	#STD_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
+	##del trainer # I'm sorry why do this??
+	##trainer = pl.Trainer.from_argparse_args(args) 
+	#std_regressor = FFRegressor(**vars(args.FFRegressor))
+	#std_regressor = fit_UQ_model('std_regressor', trainer, std_regressor, STD_dataset)
+	##########################################################################
