@@ -1,12 +1,12 @@
 #!/bin/bash
 #
-#SBATCH --job-name="ChemTab UQ Distributed"
+#SBATCH --job-name="ChemTab UQ Distributed-debug"
 #SBATCH --output=ChemTab_UQ_Distributed.out
 #SBATCH --mail-user=dwyerdei@buffalo.edu
 #SBATCH --mail-type=end
 #SBATCH --cluster=ub-hpc
-#SBATCH --partition=debug #general-compute
-#SBATCH --qos=debug #general-compute
+#SBATCH --partition=debug
+#SBATCH --qos=debug
 #SBATCH --threads-per-core=1    # do not use hyperthreads (i.e. CPUs = physical cores below)
 #SBATCH --cpus-per-task=5       # number of CPUs per process (we want extra for data loaders)
 #SBATCH --ntasks-per-node=2     # This needs to match Trainer(devices=...), Also: it seems that GPU nodes have only 2 GPUs per node anyways...

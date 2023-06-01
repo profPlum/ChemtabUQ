@@ -151,6 +151,8 @@ class FFRegressor(pl.LightningModule):
 	# sync dist makes metrics more accurate (by syncing across devices), but slows down training
 	def log_metrics(self, Y_pred, Y, prefix='', sync_dist=True):
 		loss = F.mse_loss(Y_pred, Y)
+		#print('Y_pred.shape:', Y_pred.shape)
+		#print('Y.shape:', Y.shape, flush=True)
 		self.log(prefix+'mse_loss', loss, sync_dist=sync_dist)
 		self.log(prefix+'R2_var_weighted', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'),sync_dist=sync_dist)
 		self.log(prefix+'R2_avg', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'),sync_dist=sync_dist)
@@ -205,104 +207,116 @@ class UQ_DataModule(pl.LightningDataModule):
 	def val_dataloader(self) -> EVAL_DATALOADERS:
 		return self.val_loader
 
-#################### TODO: maybe use with LightningCLI? ###################
-#class MeanRegressorDataModule(UQ_DataModule):
-#	def __init__(self, data_fn: str, constant=True, **kwargs):
-#		"""
-#		This is the dataset used for fitting a mean regressor model (i.e. dummy chemtab model)
-#		:param data_fn: grouped chrest csv for getting moments
-#		:param constant: whether to keep the (uncertain) inputs constant (i.e. use only mean), I believe constant is a good idea
-#		"""
-#		moments_dataset = UQMomentsDataset(data_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
-#		regressor_dataset = UQSamplesDataset(moments_dataset, constant=constant)
-#		super().__init__(regressor_dataset, **kwargs)
-#
-#class UQRegressorDataModule(UQ_DataModule):
-#	def __init__(self, data_fn: str, mean_regressor_fn: str, **kwargs):
-#		"""
-#		This is the dataset used for fitting a UQ model (i.e. 2nd moment aka SE regressor)
-#		:param data_fn: grouped chrest csv for getting moments
-#		:param constant: whether to keep the (uncertain) inputs constant (i.e. use only mean), I believe constant is a good idea
-#		"""
-#		moments_dataset = UQMomentsDataset(data_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
-#		(mu, sigma), outs = random.choice(moments_dataset)
-#
-#		# TODO: support loading tensorflow models too!! How do we do this? Different file/module?
-#		mean_regressor = FFRegressor.load_from_checkpoint(mean_regressor_fn, input_size=mu.shape[0]).gpu()
-#		regressor_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
-#		super().__init__(regressor_dataset, **kwargs)
-#
-##########################################################################
+################### TODO: debug with LightningCLI! ###################
+class MeanRegressorDataModule(UQ_DataModule):
+	def __init__(self, data_fn: str, constant=True, **kwargs):
+		"""
+		This is the dataset used for fitting a mean regressor model (i.e. dummy chemtab model)
+		:param data_fn: grouped chrest csv for getting moments
+		:param constant: whether to keep the (uncertain) inputs constant (i.e. use only mean), I believe constant is a good idea
+		"""
+		moments_dataset = UQMomentsDataset(data_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
+		regressor_dataset = UQSamplesDataset(moments_dataset, constant=constant)
+		super().__init__(regressor_dataset, **kwargs)
 
-# TODO: implement me!! Nope! Bad idea actually do the types!
-def DataSet_factory(data_fn: str, UQ_data: bool=False, mean_regressor_fn: str=None):
-	"""
-	Factory pattern for building the datasets, composition > inheritance
-	:param data_fn: data_csv for building moments dataset, whether fitting a mean regressor or a UQ-SE model we need this
-	:param UQ_data: whether we are building the dataset for a UQ model or a mean regressor
-	:param mean_regressor_fn: if we are building the dataset for a UQ model it is required that we load a mean regressor to acquire error data (this is the model's file name)
-	"""
-	df_fn = f'{os.environ["HOME"]}/data/{data_fn}'
-	moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
-	if UQ_data:
+class UQRegressorDataModule(UQ_DataModule):
+	def __init__(self, data_fn: str, mean_regressor_fn: str, **kwargs):
+		"""
+		This is the dataset used for fitting a UQ model (i.e. 2nd moment aka SE regressor)
+		:param data_fn: grouped chrest csv for getting moments
+		:param constant: whether to keep the (uncertain) inputs constant (i.e. use only mean), I believe constant is a good idea
+		"""
+		moments_dataset = UQMomentsDataset(data_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
+		(mu, sigma), outs = random.choice(moments_dataset)
+
+		# TODO: support loading tensorflow models too!! How do we do this? Different file/module?
+		mean_regressor = FFRegressor.load_from_checkpoint(mean_regressor_fn, input_size=mu.shape[0]).gpu()
 		regressor_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
-	else:
-		regressor_dataset = UQSamplesDataset(moments_dataset, constant=True)
-	return regressor_dataset
+		super().__init__(regressor_dataset, **kwargs)
+
+#########################################################################
+
+class MyLightningCLI(pl.cli.LightningCLI):
+	def add_arguments_to_parser(self, parser):
+		parser.link_arguments(['trainer.devices', 'trainer.num_nodes'], 'model.lr_coef', compute_fn=lambda devices, num_nodes: int(num_nodes)*int(devices), apply_on='parse')
+		#parser.link_arguments([], apply_on='instantiate')
 
 
-# TODO: make into main() function?
-def fit_UQ_model(name, trainer, regressor, datamodule):
-	# TODO: make this a linked argument!
-	#x,y=next(iter(datamodule.val_dataloader())) # hack to find dataset input size!
-	#regressor = FFRegressor(input_size=x.shape[1], output_size=y.shape[1], # TODO: all this should be automated by LightningCLI
-	#						lr_coef=kwd_args['lr_coef'], 
-	#			    		device_stats_monitor=kwd_args['device_stats_monitor'])
-	trainer.fit(regressor, datamodule=datamodule)
-	trainer.save_checkpoint(f'{name}.ckpt')
-	print(f'done fitting {name}!')
-	return regressor
+# Example Usage: srun --ntasks-per-node=2 python ChemtabUQ.py fit --model.input_size=53 --model.output_size=53 --data.class_path=MeanRegressorDataModule --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --trainer.devices=2 --trainer.num_nodes=2
+def cli_main():
+	MyLightningCLI(FFRegressor, UQ_DataModule, subclass_mode_data=True, save_config_kwargs={"overwrite": True})
 
 if __name__=='__main__':
-	# NOTE: it seems that regular LightningCLI is too generic for your use case since only trains 1 model on one dataset at a time...
-	parser = LightningArgumentParser() # this should be strictly better than regular argument parser & more general too!
-	#parser.add_argument('--device-stats-monitor', action='store_true', 
-	#	help='Manually added CLI arg to support configuration of DeviceStatsMonitor() profiling (i.e. measuring utilization of GPUs). Turn on for more thorough profiling/troubleshooting.')
-	#parser.add_argument('--dataset', default='chrest_contiguous_group_sample100k.csv', help='dataset file name (should be inside the ~/data folder)')
-	#parser.add_argument('--batch_size', default=1000, type=int, help='batch_size per GPU') # TODO: remove since this should be redundant??
-	#parser.add_argument('--constant-training-data', action='store_true',  # TODO: consider removing this since it seems like it doesn't even make sense to have anymore?
-	#					help='Experimental mode where constant training data is used for primary regressor then samples are taken afterward for UQ portion.')
-	parser.add_lightning_class_args(pl.Trainer, 'Trainer')
-	parser.add_lightning_class_args(UQ_DataModule, 'DataModule') # does this even make sense?? How does it have the non-trivial Dataset Argument?? Fuck it lets try it!
-	parser.add_lightning_class_args(FFRegressor, 'FFRegressor')
-	dataset_fact_args = parser.add_function_arguments(DataSet_factory, 'DataSet_factory')
-	parser.link_arguments(dataset_fact_args, 'UQ_DataModule.dataset', compute_fn=DataSet_factory, apply_on='parse')
-	parser.link_arguments(['UQ_DataModule.dataset'], 'FFRegressor.input_size', compute_fn=lambda dataset: next(iter(dataset))[0].shape[1], apply_on='parse')
-	parser.link_arguments(['UQ_DataModule.dataset'], 'FFRegressor.output_size', compute_fn=lambda dataset: next(iter(dataset))[1].shape[1], apply_on='parse')
-	parser.link_arguments(['Trainer.devices', 'Trainer.num_nodes'], 'FFRegressor.lr_coef', compute_fn=lambda devices, num_nodes: int(num_nodes)*int(devices), apply_on='parse')
-	args = parser.parse_args()
+    cli_main()
 
-	##################### Fit Mean Regressor: #####################
-	#df_fn = f'{os.environ["HOME"]}/data/{args.dataset}'
-	#moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
-	#samples_dataset = UQSamplesDataset(moments_dataset, constant=args.constant_training_data)
-	#samples_data_module = UQ_DataModule(samples_dataset, **vars(args.DataModule))
-	samples_data_module = UQ_DataModule(**vars(args.DataModule))
+#def DataSet_factory(data_fn: str, UQ_data: bool=False, mean_regressor_fn: str=None):
+#	"""
+#	Factory pattern for building the datasets, composition > inheritance
+#	:param data_fn: data_csv for building moments dataset, whether fitting a mean regressor or a UQ-SE model we need this
+#	:param UQ_data: whether we are building the dataset for a UQ model or a mean regressor
+#	:param mean_regressor_fn: if we are building the dataset for a UQ model it is required that we load a mean regressor to acquire error data (this is the model's file name)
+#	"""
+#	df_fn = f'{os.environ["HOME"]}/data/{data_fn}'
+#	moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
+#	if UQ_data:
+#		regressor_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
+#	else:
+#		regressor_dataset = UQSamplesDataset(moments_dataset, constant=True)
+#	return regressor_dataset
 
-	# TODO: use pl.LightningDataModule, see this url: https://lightning.ai/docs/pytorch/stable/data/datamodule.html
-	#train_settings = {'batch_size': args.batch_size, 'workers': 4, # these should be from LightningCLI args directly
-	#				  'lr_coef': int(args.num_nodes)*int(args.devices), # should be a link
-	#				  'device_stats_monitor': args.device_stats_monitor} # again should be from LightningCLI args directly
-	trainer = pl.Trainer(**vars(args.Trainer)) # TODO: check that this works? It does!! But you should just use LightningCLI after making data module factory...
-	mean_regressor = FFRegressor(**vars(args.FFRegressor))
-	mean_regressor = fit_UQ_model('mean_regressor', trainer, mean_regressor, samples_data_module)
-	#########################################################################
-	
-	###################### Fit Standard Deviation Regressor: #####################
-	#
-	#STD_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
-	##del trainer # I'm sorry why do this??
-	##trainer = pl.Trainer.from_argparse_args(args) 
-	#std_regressor = FFRegressor(**vars(args.FFRegressor))
-	#std_regressor = fit_UQ_model('std_regressor', trainer, std_regressor, STD_dataset)
-	##########################################################################
+
+## TODO: make into main() function?
+#def fit_UQ_model(name, trainer, regressor, datamodule):
+#	# TODO: make this a linked argument!
+#	#x,y=next(iter(datamodule.val_dataloader())) # hack to find dataset input size!
+#	#regressor = FFRegressor(input_size=x.shape[1], output_size=y.shape[1], # TODO: all this should be automated by LightningCLI
+#	#						lr_coef=kwd_args['lr_coef'], 
+#	#			    		device_stats_monitor=kwd_args['device_stats_monitor'])
+#	trainer.fit(regressor, datamodule=datamodule)
+#	trainer.save_checkpoint(f'{name}.ckpt')
+#	print(f'done fitting {name}!')
+#	return regressor
+
+#if __name__=='__main__':
+#	# NOTE: it seems that regular LightningCLI is too generic for your use case since only trains 1 model on one dataset at a time...
+#	parser = LightningArgumentParser() # this should be strictly better than regular argument parser & more general too!
+#	#parser.add_argument('--device-stats-monitor', action='store_true', 
+#	#	help='Manually added CLI arg to support configuration of DeviceStatsMonitor() profiling (i.e. measuring utilization of GPUs). Turn on for more thorough profiling/troubleshooting.')
+#	#parser.add_argument('--dataset', default='chrest_contiguous_group_sample100k.csv', help='dataset file name (should be inside the ~/data folder)')
+#	#parser.add_argument('--batch_size', default=1000, type=int, help='batch_size per GPU') # TODO: remove since this should be redundant??
+#	#parser.add_argument('--constant-training-data', action='store_true',  # TODO: consider removing this since it seems like it doesn't even make sense to have anymore?
+#	#					help='Experimental mode where constant training data is used for primary regressor then samples are taken afterward for UQ portion.')
+#	parser.add_lightning_class_args(pl.Trainer, 'Trainer')
+#	parser.add_lightning_class_args(UQ_DataModule, 'DataModule') # does this even make sense?? How does it have the non-trivial Dataset Argument?? Fuck it lets try it!
+#	parser.add_lightning_class_args(FFRegressor, 'FFRegressor')
+#	dataset_fact_args = parser.add_function_arguments(DataSet_factory, 'DataSet_factory')
+#	parser.link_arguments(dataset_fact_args, 'UQ_DataModule.dataset', compute_fn=DataSet_factory, apply_on='parse')
+#	parser.link_arguments(['UQ_DataModule.dataset'], 'FFRegressor.input_size', compute_fn=lambda dataset: next(iter(dataset))[0].shape[1], apply_on='parse')
+#	parser.link_arguments(['UQ_DataModule.dataset'], 'FFRegressor.output_size', compute_fn=lambda dataset: next(iter(dataset))[1].shape[1], apply_on='parse')
+#	parser.link_arguments(['Trainer.devices', 'Trainer.num_nodes'], 'FFRegressor.lr_coef', compute_fn=lambda devices, num_nodes: int(num_nodes)*int(devices), apply_on='parse')
+#	args = parser.parse_args()
+#
+#	##################### Fit Mean Regressor: #####################
+#	#df_fn = f'{os.environ["HOME"]}/data/{args.dataset}'
+#	#moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
+#	#samples_dataset = UQSamplesDataset(moments_dataset, constant=args.constant_training_data)
+#	#samples_data_module = UQ_DataModule(samples_dataset, **vars(args.DataModule))
+#	samples_data_module = UQ_DataModule(**vars(args.DataModule))
+#
+#	# TODO: use pl.LightningDataModule, see this url: https://lightning.ai/docs/pytorch/stable/data/datamodule.html
+#	#train_settings = {'batch_size': args.batch_size, 'workers': 4, # these should be from LightningCLI args directly
+#	#				  'lr_coef': int(args.num_nodes)*int(args.devices), # should be a link
+#	#				  'device_stats_monitor': args.device_stats_monitor} # again should be from LightningCLI args directly
+#	trainer = pl.Trainer(**vars(args.Trainer)) # TODO: check that this works? It does!! But you should just use LightningCLI after making data module factory...
+#	mean_regressor = FFRegressor(**vars(args.FFRegressor))
+#	mean_regressor = fit_UQ_model('mean_regressor', trainer, mean_regressor, samples_data_module)
+#	#########################################################################
+#	
+#	###################### Fit Standard Deviation Regressor: #####################
+#	#
+#	#STD_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
+#	##del trainer # I'm sorry why do this??
+#	##trainer = pl.Trainer.from_argparse_args(args) 
+#	#std_regressor = FFRegressor(**vars(args.FFRegressor))
+#	#std_regressor = fit_UQ_model('std_regressor', trainer, std_regressor, STD_dataset)
+#	##########################################################################
