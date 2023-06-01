@@ -238,9 +238,14 @@ class UQRegressorDataModule(UQ_DataModule):
 
 class MyLightningCLI(pl.cli.LightningCLI):
 	def add_arguments_to_parser(self, parser):
-		parser.link_arguments(['trainer.devices', 'trainer.num_nodes'], 'model.lr_coef', compute_fn=lambda devices, num_nodes: int(num_nodes)*int(devices), apply_on='parse')
-		#parser.link_arguments([], apply_on='instantiate')
-
+		parser.set_defaults({'trainer.num_nodes': 1, 'trainer.devices': 1}) # we want lr_coef to work properly!
+		parser.link_arguments(['trainer.devices', 'trainer.num_nodes'], 'model.lr_coef', apply_on='parse', compute_fn=lambda devices, num_nodes: int(num_nodes)*int(devices))
+		parser.link_arguments(['data.dataset'], 'model.input_size', compute_fn=lambda dataset: next(iter(dataset))[0].shape[0], apply_on='instantiate') # holyshit this works!
+		parser.link_arguments(['data.dataset'], 'model.output_size', compute_fn=lambda dataset: next(iter(dataset))[1].shape[0], apply_on='instantiate')
+		
+		#get_shape = lambda ds, output=False: next(iter(dataset))[int(output)].shape[0] # shape 0 size batching is not applied yet, it is a 1d vector...	
+		#parser.link_arguments(['data.dataset'], 'model.input_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=False)) # holyshit this works!
+		#parser.link_arguments(['data.dataset'], 'model.output_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=True))
 
 # Example Usage: srun --ntasks-per-node=2 python ChemtabUQ.py fit --model.input_size=53 --model.output_size=53 --data.class_path=MeanRegressorDataModule --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --trainer.devices=2 --trainer.num_nodes=2
 def cli_main():
