@@ -21,7 +21,7 @@ def wrap_mean_regressor(model_dir: str):
 
     global Yi_names
     Yi_names=tuple(['Yi'+species_name for species_name in weight_mat.index])
-    
+
 	# same as in simulation
     def mean_regressor(Yi_inputs: th.Tensor, dt=1e-2):
         # TODO: sanity check that the species are in the correct order!!
@@ -32,7 +32,7 @@ def wrap_mean_regressor(model_dir: str):
         Yi_inv0 = Yi_inputs.cpu().numpy()
 
         # Do finite difference to get approximate Yi sources terms
-        
+ 
         #print('Zmix_and_CPVs.shape:', Zmix_and_CPVs.shape)
         Zmix_and_CPVs[:,1:]+=CPV_sources*dt # do a timestep (Zmix's source is always 0)
         outputs2 = model(Zmix_and_CPVs)['static_source_prediction'].numpy()[:,1:] # invert the CPVs at the next timestep
