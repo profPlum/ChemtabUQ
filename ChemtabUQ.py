@@ -1,3 +1,4 @@
+import os
 from typing import Any, Optional
 import pandas as pd
 import numpy as np
@@ -17,12 +18,13 @@ from pytorch_lightning.callbacks import DeviceStatsMonitor
 
 # TODO: put inside prepare method for LigthningDataModule! (should only happen once then result saved to disk)
 class UQMomentsDataset(Dataset):
-	def __init__(self, csv_fn: str, inputs_like: str, outputs_like: str, group_key: str):
+	def __init__(self, csv_fn: str, inputs_like: str, outputs_like: str, group_key: str, scale=False):
 		"""
 		Generic UQ Dataset which uses split-apply-combine on group_key to Produce UQ moments (mean & variance)
 		:param csv_fn: name of csv file containing chrest data
 		:param inputs_like: pattern to match input columns in csv
 		:param outputs_like: pattern to match output columns in csv
+		:param scale: whether to scale the data for the model (i.e. using standard scaler)
 		"""
 		df = pd.read_csv(csv_fn)
 		print('original df len: ', len(df))
@@ -30,13 +32,14 @@ class UQMomentsDataset(Dataset):
 		valid_group_keys = df.groupby(group_key).std().dropna().index
 		mask = np.isin(df[group_key], valid_group_keys)
 		df = df[mask] # mask df to remove all group keys with only 1 element (which gives nan std)
-		#df.index=df[group_key]
 		print('masked df len: ', len(df))
 
 		def filter_and_scale(like):
-			scaler = StandardScaler()
+			scaler = None
 			subset_df = df.filter(like=like)
-			subset_df[:] = scaler.fit_transform(subset_df)
+			if scale:
+				scaler = StandardScaler()
+				subset_df[:] = scaler.fit_transform(subset_df)
 			subset_df.index = df[group_key]
 			return subset_df, scaler			
 
@@ -170,8 +173,6 @@ class FFRegressor(pl.LightningModule):
 	def validation_step(self, val_batch, batch_id):
 		self.training_step(val_batch, batch_id, log_prefix='val_')
 
-import os
-
 # TODO: should do moments preprocessing in the prep function stage then save the file to pickle with hash based on arguments & reload later
 # doubly important since we are seperating the mean regressor fitting from the UQ model fitting!
 # Lol I just crammed the previous functions into this class... I think it should work fine though?
@@ -208,7 +209,7 @@ class UQ_DataModule(pl.LightningDataModule):
 	def val_dataloader(self) -> EVAL_DATALOADERS:
 		return self.val_loader
 
-################### TODO: debug with LightningCLI! ###################
+################### Specialized Data Modules for Mean & UQ Regressors: ###################
 class MeanRegressorDataModule(UQ_DataModule):
 	def __init__(self, data_fn: str, constant=True, **kwargs):
 		"""
@@ -220,6 +221,15 @@ class MeanRegressorDataModule(UQ_DataModule):
 		regressor_dataset = UQSamplesDataset(moments_dataset, constant=constant)
 		super().__init__(regressor_dataset, **kwargs)
 
+def load_mean_regressor_factory(model_fn, cols):
+	""" load model factory (originally intended for mean regressor) """
+	if model_fn.endswith('.ckpt'):
+        model = FFRegressor.load_from_checkpoint(model_fn, input_size=len(cols))#.to('cuda')
+    else:
+        model = TF2PL_chemtab_wrapper.wrap_mean_regressor(model_fn)
+        TF2PL_chemtab_wrapper.check_Yi_consistency(cols)
+	return mean_regressor
+
 class UQRegressorDataModule(UQ_DataModule):
 	def __init__(self, data_fn: str, mean_regressor_fn: str, **kwargs):
 		"""
@@ -230,8 +240,13 @@ class UQRegressorDataModule(UQ_DataModule):
 		moments_dataset = UQMomentsDataset(data_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')#.to('cuda')
 		(mu, sigma), outs = random.choice(moments_dataset)
 
-		# TODO: support loading tensorflow models too!! How do we do this? Different file/module?
-		mean_regressor = FFRegressor.load_from_checkpoint(mean_regressor_fn, input_size=mu.shape[0])#.to('cuda')
+		mean_regressor = load_mean_regressor_factory(mean_regressor_fn, moments_dataset.input_col_names)
+		#if mean_regressor_fn.endswith('.ckpt'):
+		#	# TODO: support loading tensorflow models too!! How do we do this? Different file/module?
+		#	mean_regressor = FFRegressor.load_from_checkpoint(mean_regressor_fn, input_size=mu.shape[0])#.to('cuda')
+		#else:
+		#	mean_regressor = TF2PL_chemtab_wrapper.wrap_mean_regressor(mean_regressor_fn) #'./PCDNNV2_decomp_ablate-filtered-97%R2')
+		#	TF2PL_chemtab_wrapper.check_Yi_consistency(moments_dataset.input_col_names)
 		regressor_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
 		super().__init__(regressor_dataset, **kwargs)
 
@@ -245,7 +260,7 @@ class MyLightningCLI(pl.cli.LightningCLI):
 		parser.link_arguments(['data.dataset'], 'model.input_size', compute_fn=lambda dataset: next(iter(dataset))[0].shape[0], apply_on='instantiate') # holyshit this works!
 		parser.link_arguments(['data.dataset'], 'model.output_size', compute_fn=lambda dataset: next(iter(dataset))[1].shape[0], apply_on='instantiate')
 		#parser.add_argument('--model_name', type=str, default=None, help='name of the model for saving', required=False)	
-	
+		
 		#get_shape = lambda ds, output=False: next(iter(dataset))[int(output)].shape[0] # shape 0 size batching is not applied yet, it is a 1d vector...	
 		#parser.link_arguments(['data.dataset'], 'model.input_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=False)) # holyshit this works!
 		#parser.link_arguments(['data.dataset'], 'model.output_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=True))
