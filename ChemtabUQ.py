@@ -117,7 +117,7 @@ class UQErrorPredictionDataset(Dataset):
 
 class FFRegressor(pl.LightningModule):
 	def __init__(self, input_size: int, output_size: int=None, n_layers: int=8, 
-	      		learning_rate: float=1e-4, lr_coef: float=1.0,
+	      		learning_rate: float=7.585775750291837e-08, lr_coef: float=1.0,
 				device_stats_monitor=False):
 		"""
 		Just a simple FF Network that scales
@@ -125,7 +125,7 @@ class FFRegressor(pl.LightningModule):
 		:param input_size: NN input size
 		:param output_size: NN output size
 		:param n_layers: number of NN layers
-		:param learning_rate: NN learning rate
+		:param learning_rate: NN learning rate (default provided by auto_lr_finder)
 		:param lr_coef: the learning_rate scaling coefficient (i.e. from larger batch size across gpus)
 		:param device_stats_monitor: whether to use a device monitor (i.e. log device usage)
 		"""
@@ -180,11 +180,11 @@ import os
 # doubly important since we are seperating the mean regressor fitting from the UQ model fitting!
 # Lol I just crammed the previous functions into this class... I think it should work fine though?
 class UQ_DataModule(pl.LightningDataModule):
-	def __init__(self, dataset: Dataset, batch_size=1000, train_portion=0.8, data_workers=4):
+	def __init__(self, dataset: Dataset, batch_size=27310, train_portion=0.8, data_workers=4):
 		"""
 		UQ data module (or mean regressor data module)
 		:param dataset: this is the dataset you want to fit your "UQ" model to (can also be mean regressor)
-		:param batch_size: the batch size for training & validation
+		:param batch_size: the batch size for training & validation (default set by auto_batch_size_finder)
 		"""
 		super().__init__()
 		vars(self).update(locals())
@@ -193,13 +193,14 @@ class UQ_DataModule(pl.LightningDataModule):
 	
 	def setup(self, stage=None):
 		def make_data_loaders(dataset, batch_size, train_portion=0.8, data_workers=4, **kwd_args):
+			# TODO: revert to simpler method of providing portions (should work I think)
 			def _get_split_sizes(full_dataset: Dataset, train_portion) -> tuple:
 				len_full = len(full_dataset)
 				len_train = int(train_portion*len_full)
 				len_val = len_full - len_train
 				return len_train, len_val
 			train, val = random_split(dataset, _get_split_sizes(dataset, train_portion))#[train_portion, 1-train_portion])
-			get_batch_size = lambda df: len(df) if batch_size is None else batch_size
+			get_batch_size = lambda df: len(df) if batch_size is None else min(batch_size, len(df)) # min ensures we don't choose invalid values!
 			train_loader = DataLoader(train, batch_size=get_batch_size(train), num_workers=data_workers, shuffle=True)
 			val_loader = DataLoader(val, batch_size=get_batch_size(val), num_workers=data_workers)
 			return train_loader, val_loader
@@ -257,7 +258,7 @@ class MyLightningCLI(pl.cli.LightningCLI):
 def cli_main():
 	cli=MyLightningCLI(FFRegressor, UQ_DataModule, subclass_mode_data=True, save_config_kwargs={"overwrite": True})
 	cli.trainer.save_checkpoint("model.ckpt")
-	th.save(cli.model, "model.pt")	
+	#th.save(cli.model, "model.pt") # it seems this type of save is unnecessary and even problematic	
 
 if __name__=='__main__':
     cli_main()
