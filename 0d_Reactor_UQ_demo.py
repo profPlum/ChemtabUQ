@@ -7,10 +7,15 @@ moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspe
 
 import random
 
-# get ICs
-(mu, sigma), outs = random.choice(moments_dataset)
+# get ICs, why is it that moderate O2 still give us steady state behavior? 
+while True:
+	(mu, sigma), outs = random.choice(moments_dataset)
+	if 0.5<mu[3]<0.8: break # check O2 isn't too high
+mu = th.abs(th.randn(*sigma.shape))
 Yi_state=mu.reshape(1,-1) + th.randn(*sigma.shape)*sample_from_uncertainty*0.1
+Yi_state /= Yi_state.sum()
 Yi_var=(sigma**2).reshape(1,-1)
+print(Yi_state)
 
 n_Yi = mu.shape[0]
 assert n_Yi == 53
@@ -46,13 +51,11 @@ import warnings
 warnings.simplefilter("ignore")
 for i in range(n_time_steps*step_multiplier):
 	Yi_dot = mean_regressor(Yi_state).detach()
-	print('time: ', i*dt)
-	print('||Yi_dot||: ', np.linalg.norm(Yi_dot, 2))
-	print('Yi_dot: ', Yi_dot)
+	#print('time: ', i*dt)
+	#print('||Yi_dot||: ', np.linalg.norm(Yi_dot, 2))
+	#print('Yi_dot: ', Yi_dot)
 	Yi_state += Yi_dot*dt
-	print('Yi_state: ', Yi_state)
-
-	#time.sleep(1)
+	#print('Yi_state: ', Yi_state)
 
 	# scale the SE by the dt coef then convert to variance for VAR(X+Y)=VAR(X)+VAR(Y)
 	Yi_var += (std_regressor(th.cat([Yi_state, Yi_var],axis=1)).detach()*dt)**2
