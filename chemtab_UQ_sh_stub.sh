@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # NOTE: this is a dynamic SH stub which can be reused for debug or preduction versions of chemtab UQ experiments!
+# Example USAGE: EXTRA_PL_ARGS='--data.data_fn=../data/chrest_contiguous_group_sample100k.csv --data.batch_size 4500 --trainer.fast_dev_run True' ./chemtab_UQ_slurm-debug.job
 
 srun nvidia-smi
 
@@ -15,8 +16,8 @@ echo num nodes: $num_nodes
 [ -z "$EXTRA_PL_ARGS" ] && echo EXTRA_PL_ARGS is empty!! >&2
 
 # clear previous variables (NOT an input env variable)
-diagnostic_CLI_args="--trainer.logger True --trainer.profiler simple --model.device-stats-monitor True --trainer.track_grad_norm 2" # use these only for "debug mode"
-EXTRA_PL_ARGS1="$EXTRA_PL_ARGS $PL_MAX_EPOCHS $diagnostic_CLI_args" # NOTE: this should be an environment variable given by the user when submitting sbatch!!
+diagnostic_CLI_args="--trainer.logger True --trainer.profiler simple --model.device_stats_monitor True --trainer.track_grad_norm 2" # use these only for "debug mode"
+EXTRA_PL_ARGS1="$EXTRA_PL_ARGS $PL_MAX_EPOCHS $diagnostic_CLI_args" # NOTE: EXTRA_PL_ARGS should be an environment variable given by the user when submitting sbatch!!
 lightning_CLI_args="$EXTRA_PL_ARGS1 --trainer.num_nodes=$num_nodes --trainer.devices=2 --trainer.accelerator=gpu --trainer.strategy=ddp --trainer.gradient_clip_algorithm=value --trainer.gradient_clip_val 0.25"
 # NOTE: gradient_clip_value=0.5 recommended by PL docs
 # NOTE: --max_epochs -1 --> means no max epochs (i.e. fit for entire allocation time)
