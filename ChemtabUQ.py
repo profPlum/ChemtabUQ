@@ -54,6 +54,12 @@ class UQMomentsDataset(Dataset):
 
 		print('reduced df len: ', self.df_sigma.shape[0])
 
+	def to(self, device):
+		self.df_mu=self.df_mu.to(device)
+		self.df_sigma=self.df_mu.to(device)
+		self.outs_df=self.outs_df.to(device)
+		return self
+
 	def __len__(self):
 		return self.df_mu.shape[0]
 
@@ -69,7 +75,7 @@ class UQSamplesDataset(Dataset):
 		self.rand_coef = (int)(not constant)
 
 	def sample(self, mu, sigma):
-		return mu + th.randn(*mu.shape)*sigma*self.rand_coef
+		return mu + th.randn(*mu.shape).to(mu.device)*sigma*self.rand_coef
 
 	def __len__(self):
 		return len(self.moments_dataset)
@@ -110,8 +116,6 @@ class UQErrorPredictionDataset(Dataset):
 		return	th.cat((mu, sigma), axis=-1), self.SE_model[index]
 
 class FFRegressor(pl.LightningModule):
-	# TODO: integrate data module class so that this doesn't need a hack for input/output sizes (just pass in dataset)
-	# ^ Nope! Don't do this! Instead just use linked arguments obviously
 	def __init__(self, input_size: int, output_size: int=None, n_layers: int=8, 
 	      		learning_rate: float=1e-4, lr_coef: float=1.0,
 				device_stats_monitor=False):
@@ -176,7 +180,7 @@ import os
 # doubly important since we are seperating the mean regressor fitting from the UQ model fitting!
 # Lol I just crammed the previous functions into this class... I think it should work fine though?
 class UQ_DataModule(pl.LightningDataModule):
-	def __init__(self, dataset: Dataset=None, batch_size=1000, train_portion=0.8, data_workers=4):
+	def __init__(self, dataset: Dataset, batch_size=1000, train_portion=0.8, data_workers=4):
 		"""
 		UQ data module (or mean regressor data module)
 		:param dataset: this is the dataset you want to fit your "UQ" model to (can also be mean regressor)
@@ -226,30 +230,34 @@ class UQRegressorDataModule(UQ_DataModule):
 		:param data_fn: grouped chrest csv for getting moments
 		:param constant: whether to keep the (uncertain) inputs constant (i.e. use only mean), I believe constant is a good idea
 		"""
-		moments_dataset = UQMomentsDataset(data_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
+		moments_dataset = UQMomentsDataset(data_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')#.to('cuda')
 		(mu, sigma), outs = random.choice(moments_dataset)
 
 		# TODO: support loading tensorflow models too!! How do we do this? Different file/module?
-		mean_regressor = FFRegressor.load_from_checkpoint(mean_regressor_fn, input_size=mu.shape[0]).gpu()
+		mean_regressor = FFRegressor.load_from_checkpoint(mean_regressor_fn, input_size=mu.shape[0])#.to('cuda')
 		regressor_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
 		super().__init__(regressor_dataset, **kwargs)
 
 #########################################################################
 
+# NOTE: if you want to juggle between pytorch v2.0 and v<2.0 (e.g. for legacy or A100 GPUs) then you just need to juggle between pytorch_distributed_cuda3 (for legacy) and pytorch_distributed (for A100s)
 class MyLightningCLI(pl.cli.LightningCLI):
 	def add_arguments_to_parser(self, parser):
 		parser.set_defaults({'trainer.num_nodes': 1, 'trainer.devices': 1}) # we want lr_coef to work properly!
 		parser.link_arguments(['trainer.devices', 'trainer.num_nodes'], 'model.lr_coef', apply_on='parse', compute_fn=lambda devices, num_nodes: int(num_nodes)*int(devices))
 		parser.link_arguments(['data.dataset'], 'model.input_size', compute_fn=lambda dataset: next(iter(dataset))[0].shape[0], apply_on='instantiate') # holyshit this works!
 		parser.link_arguments(['data.dataset'], 'model.output_size', compute_fn=lambda dataset: next(iter(dataset))[1].shape[0], apply_on='instantiate')
-		
+		#parser.add_argument('--model_name', type=str, default=None, help='name of the model for saving', required=False)	
+	
 		#get_shape = lambda ds, output=False: next(iter(dataset))[int(output)].shape[0] # shape 0 size batching is not applied yet, it is a 1d vector...	
 		#parser.link_arguments(['data.dataset'], 'model.input_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=False)) # holyshit this works!
 		#parser.link_arguments(['data.dataset'], 'model.output_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=True))
 
-# Example Usage: srun --ntasks-per-node=2 python ChemtabUQ.py fit --model.input_size=53 --model.output_size=53 --data.class_path=MeanRegressorDataModule --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --trainer.devices=2 --trainer.num_nodes=2
+# Example Usage: srun --ntasks-per-node=2 python ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --trainer.accelerator=gpu --trainer.devices=2 --trainer.num_nodes=2
 def cli_main():
-	MyLightningCLI(FFRegressor, UQ_DataModule, subclass_mode_data=True, save_config_kwargs={"overwrite": True})
+	cli=MyLightningCLI(FFRegressor, UQ_DataModule, subclass_mode_data=True, save_config_kwargs={"overwrite": True})
+	cli.trainer.save_checkpoint("model.ckpt")
+	th.save(cli.model, "model.pt")	
 
 if __name__=='__main__':
     cli_main()
