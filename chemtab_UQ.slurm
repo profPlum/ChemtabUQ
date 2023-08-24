@@ -20,4 +20,4 @@
 
 PL_MAX_EPOCHS='--max_epochs 2000'
 
-source /user/dwyerdei/ChemtabUQ/chemtab_UQ_sh_stub.sh
+. chemtab_UQ_job_stub.sh

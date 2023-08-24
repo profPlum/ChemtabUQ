@@ -20,4 +20,4 @@
 
 PL_MAX_EPOCHS='--trainer.max_epochs 500'
 
-. chemtab_UQ_sh_stub.sh
+. chemtab_UQ_job_stub.sh
