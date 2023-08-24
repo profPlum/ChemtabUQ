@@ -2,6 +2,7 @@
 
 # NOTE: this is a dynamic SH stub which can be reused for debug or preduction versions of chemtab UQ experiments!
 # Example USAGE: EXTRA_PL_ARGS='--data.data_fn=../data/chrest_contiguous_group_sample100k.csv --data.batch_size 4500 --trainer.fast_dev_run True' ./chemtab_UQ_slurm-debug.job
+# HINT, try this: python ChemtabUQ.py fit --data.help MeanRegressorDataModule !! Gives you great overview of possible CLI args to the data module class for training more general Chemtab mean models
 
 srun nvidia-smi
 

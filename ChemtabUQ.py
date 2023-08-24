@@ -18,7 +18,8 @@ from pytorch_lightning.callbacks import DeviceStatsMonitor
 
 # TODO: put inside prepare method for LigthningDataModule! (should only happen once then result saved to disk)
 class UQMomentsDataset(Dataset):
-	def __init__(self, csv_fn: str, inputs_like: str, outputs_like: str, group_key: str, scale=False):
+	#def __init__(self, csv_fn: str, inputs_like: str, outputs_like: str, group_key: str, scale=False):
+	def __init__(self, csv_fn: str, inputs_like='Yi', outputs_like='souspec', group_key='group', scale_output=False):
 		"""
 		Generic UQ Dataset which uses split-apply-combine on group_key to Produce UQ moments (mean & variance)
 		:param csv_fn: name of csv file containing chrest data
@@ -37,7 +38,7 @@ class UQMomentsDataset(Dataset):
 		def filter_and_scale(like):
 			scaler = None
 			subset_df = df.filter(like=like)
-			if scale:
+			if scale_output:
 				scaler = StandardScaler()
 				subset_df[:] = scaler.fit_transform(subset_df)
 			subset_df.index = df[group_key]
@@ -178,7 +179,7 @@ class FFRegressor(pl.LightningModule):
 # doubly important since we are seperating the mean regressor fitting from the UQ model fitting!
 # Lol I just crammed the previous functions into this class... I think it should work fine though?
 class UQ_DataModule(pl.LightningDataModule):
-	def __init__(self, dataset: Dataset, batch_size=27310, train_portion=0.8, data_workers=4):
+	def __init__(self, dataset: Dataset, batch_size: int=27310, train_portion: float=0.8, data_workers: int=4):
 		"""
 		UQ data module (or mean regressor data module)
 		:param dataset: this is the dataset you want to fit your "UQ" model to (can also be mean regressor)
@@ -211,6 +212,7 @@ class UQ_DataModule(pl.LightningDataModule):
 		return self.val_loader
 
 ################### Specialized Data Modules for Mean & UQ Regressors: ###################
+
 class MeanRegressorDataModule(UQ_DataModule):
 	def __init__(self, data_fn: str, constant=True, **kwargs):
 		"""
@@ -218,7 +220,7 @@ class MeanRegressorDataModule(UQ_DataModule):
 		:param data_fn: grouped chrest csv for getting moments
 		:param constant: whether to keep the (uncertain) inputs constant (i.e. use only mean), I believe constant is a good idea
 		"""
-		moments_dataset = UQMomentsDataset(data_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
+		moments_dataset = UQMomentsDataset(data_fn, **kwargs)
 		regressor_dataset = UQSamplesDataset(moments_dataset, constant=constant)
 		super().__init__(regressor_dataset, **kwargs)
 
@@ -239,13 +241,18 @@ class UQRegressorDataModule(UQ_DataModule):
 		:param data_fn: grouped chrest csv for getting moments
 		:param constant: whether to keep the (uncertain) inputs constant (i.e. use only mean), I believe constant is a good idea
 		"""
-		moments_dataset = UQMomentsDataset(data_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')#.to('cuda')
+		moments_dataset = UQMomentsDataset(data_fn, **kwargs)
 		(mu, sigma), outs = random.choice(moments_dataset)
 
 		mean_regressor = load_mean_regressor_factory(mean_regressor_fn, moments_dataset.input_col_names)
 		regressor_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
 		super().__init__(regressor_dataset, **kwargs)
 
+def UQ_DataModule_factory(data_fn: str, mean_regressor_fn: str = None, inputs_like='Yi', outputs_like='souspec', group_key='group', **kwd_args): 
+	moments_dataset = UQMomentsDataset(data_fn, inputs_like=inputs_like, outputs_like=outputs_like, group_key=group_key)
+	if mean_regressor_fn:
+		return UQRegressorDataModule(moments_dataset, mean_regressor_fn, **kwd_args)
+	else: return MeanRegressorDataModule(moments_dataset, **kwd_args)
 #########################################################################
 
 # NOTE: if you want to juggle between pytorch v2.0 and v<2.0 (e.g. for legacy or A100 GPUs) then you just need to juggle between pytorch_distributed_cuda3 (for legacy) and pytorch_distributed (for A100s)
@@ -261,6 +268,7 @@ class MyLightningCLI(pl.cli.LightningCLI):
 		#parser.link_arguments(['data.dataset'], 'model.input_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=False)) # holyshit this works!
 		#parser.link_arguments(['data.dataset'], 'model.output_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=True))
 
+# HINT, try this: python ChemtabUQ.py fit --data.help MeanRegressorDataModule !! Gives you great overview of possible CLI args to the data module class for training more general Chemtab mean models
 # Example Usage: srun --ntasks-per-node=2 python ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --trainer.accelerator=gpu --trainer.devices=2 --trainer.num_nodes=2
 def cli_main():
 	cli=MyLightningCLI(FFRegressor, UQ_DataModule, subclass_mode_data=True, save_config_kwargs={"overwrite": True})
