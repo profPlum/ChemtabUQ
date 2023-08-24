@@ -156,7 +156,8 @@ class FFRegressor(pl.LightningModule):
 	# sync dist makes metrics more accurate (by syncing across devices), but slows down training
 	def log_metrics(self, Y_pred, Y, prefix='', sync_dist=True):
 		loss = F.mse_loss(Y_pred, Y)
-		self.log(prefix+'mse_loss', loss, sync_dist=sync_dist)
+		self.log(prefix+'MSE_loss', loss, sync_dist=sync_dist)
+		self.log(prefix+'MAE_loss', F_metrics.mean_absolute_error(Y_pred, Y), sync_dist=sync_dist)	
 		self.log(prefix+'R2_var_weighted', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'),sync_dist=sync_dist)
 		self.log(prefix+'R2_avg', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'),sync_dist=sync_dist)
 		self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)	
