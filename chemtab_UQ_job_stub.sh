@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NOTE: this is a dynamic SH stub which can be reused for debug or preduction versions of chemtab UQ experiments!
-# Example USAGE: EXTRA_PL_ARGS='--data.data_fn=../data/chrest_contiguous_group_sample100k.csv --data.batch_size 4500 --trainer.fast_dev_run True' ./chemtab_UQ_slurm-debug.job
+# Example USAGE: EXTRA_PL_ARGS='--data.data_fn=../data/chrest_contiguous_group_sample100k.csv --data.batch_size 4500 --trainer.fast_dev_run True' ./chemtab_UQ-debug.slurm
 # HINT, try this: python ChemtabUQ.py fit --data.help MeanRegressorDataModule !! Gives you great overview of possible CLI args to the data module class for training more general Chemtab mean models
 
 srun nvidia-smi
@@ -36,14 +36,21 @@ conda activate pytorch_distributed_cuda3
 srun --ntasks-per-node=2 python ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule $lightning_CLI_args 
 mkdir mean_regressor
 mv model.* mean_regressor
-srun --ntasks-per-node=2 python ChemtabUQ.py fit --data.class_path=UQRegressorDataModule --data.mean_regressor_fn=mean_regressor/model.ckpt $lightning_CLI_args 
-mkdir UQ_regressor
-mv model.* UQ_regressor
+
+if ! [ $MEAN_ONLY ]; then
+	srun --ntasks-per-node=2 python ChemtabUQ.py fit --data.class_path=UQRegressorDataModule --data.mean_regressor_fn=mean_regressor/model.ckpt $lightning_CLI_args 
+	mkdir UQ_regressor
+	mv model.* UQ_regressor
+else
+	rm -r UQ_regressor
+fi
 
 # Example Commands for training of mean_regressor and UQ model
 #srun --ntasks-per-node=2 python ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --trainer.accelerator=gpu --trainer.devices=2 --trainer.num_nodes=2
 #srun --ntasks-per-node=2 python ChemtabUQ.py fit --data.class_path=UQRegressorDataModule --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --data.mean_regressor_fn=mean_regressor/model.ckpt --trainer.accelerator=gpu --trainer.devices=2 --trainer.num_nodes=2
 
+## Example LR & BatchSize tune command: output is lr=0.0004365158322401656, batch_size=40
+# python ChemtabUQ.py tune --data.class_path=MeanRegressorDataModule --data.data_fn=../data/Chemtab_data_MassR2.csv.gz --data.inputs_like=mass_CPV --data.outputs_like=source_CPV --data.scale_output True --trainer.accelerator=gpu --trainer.auto_lr_find True --trainer.auto_scale_batch_size power
 ## Example LR tune command: output, lr=7.585775750291837e-08
 # srun --ntasks-per-node=2 python ChemtabUQ.py tune --data.class_path=MeanRegressorDataModule --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --trainer.accelerator=gpu --trainer.devices=2 --trainer.num_nodes=2 --trainer.auto_lr_find True
 ## Example BatchSize tuner command: output, batch_size=27310
