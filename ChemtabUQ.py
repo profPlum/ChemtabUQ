@@ -117,7 +117,7 @@ class UQErrorPredictionDataset(Dataset):
         return  th.cat((mu, sigma), axis=-1), self.SE_model[index]
 
 class FFRegressor(pl.LightningModule):
-    def __init__(self, input_size: int, output_size: int=None, n_layers: int=8, 
+    def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100, n_layers: int=8, 
                 learning_rate: float=7.585775750291837e-08, lr_coef: float=1.0,
                 device_stats_monitor=False, patience=None):
         """
@@ -125,6 +125,7 @@ class FFRegressor(pl.LightningModule):
 
         :param input_size: NN input size
         :param output_size: NN output size
+        :param hidden_size: NN hidden layer size
         :param n_layers: number of NN layers
         :param learning_rate: NN learning rate (default provided by auto_lr_finder)
         :param lr_coef: the learning_rate scaling coefficient (i.e. from larger batch size across gpus)
@@ -136,7 +137,7 @@ class FFRegressor(pl.LightningModule):
         if not output_size: output_size = input_size
         vars(self).update(locals()); del self.self
 
-        hidden_size = input_size*4
+        #hidden_size = input_size*4
         bulk_layers = []
         for i in range(self.n_layers-1): # this should be safer then potentially copying layers by reference...
             bulk_layers.extend([nn.SELU(), nn.Linear(hidden_size,hidden_size)])
