@@ -10,6 +10,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, random_split
 import torchmetrics.functional as F_metrics
+from torchmetrics.regression import MeanAbsolutePercentageError
 
 import pytorch_lightning as pl
 from pytorch_lightning.cli import LightningCLI, LightningArgumentParser
@@ -118,7 +119,7 @@ class UQErrorPredictionDataset(Dataset):
 
 class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100, n_layers: int=8, 
-                learning_rate: float=7.585775750291837e-08, lr_coef: float=1.0,
+                learning_rate: float=7.585775750291837e-08, lr_coef: float=1.0, MAPE_loss: bool=False,
                 device_stats_monitor=False, patience=None):
         """
         Just a simple FF Network that scales
@@ -129,12 +130,15 @@ class FFRegressor(pl.LightningModule):
         :param n_layers: number of NN layers
         :param learning_rate: NN learning rate (default provided by auto_lr_finder)
         :param lr_coef: the learning_rate scaling coefficient (i.e. from larger batch size across gpus)
+        :param MAPE_loss: (experimental) use MAPE as loss function
         :param device_stats_monitor: whether to use a device monitor (i.e. log device usage)
         :param patience: early stopping patience (on val loss), default is None (no early stopping). NOTE: PL has default patience as 3 (when ES is enabled).
         """
         super().__init__()
         learning_rate *= lr_coef; del lr_coef
         if not output_size: output_size = input_size
+        self.loss = F.mse_loss
+        if MAPE_loss: self.loss=MeanAbsolutePercentageError()
         vars(self).update(locals()); del self.self
 
         #hidden_size = input_size*4
@@ -154,24 +158,27 @@ class FFRegressor(pl.LightningModule):
         """We want to log accelerator usage statistics for profiling,
         & only way to do this with CLI is to use this hook"""
         call_backs = [DeviceStatsMonitor()] if self.device_stats_monitor else []
-        if self.patience: call_backs += [EarlyStopping(monitor='val_MSE_loss', patience=self.patience)]
+        if self.patience: call_backs += [EarlyStopping(monitor='val_loss', patience=self.patience)]
         return call_backs
 
     # sync dist makes metrics more accurate (by syncing across devices), but slows down training
     def log_metrics(self, Y_pred, Y, prefix='', sync_dist=True):
-        loss = F.mse_loss(Y_pred, Y)
-        self.log(prefix+'MSE_loss', loss, sync_dist=sync_dist)
-        self.log(prefix+'MAE_loss', F_metrics.mean_absolute_error(Y_pred, Y), sync_dist=sync_dist)  
+        """ computes/logs metrics & loss for one step """
+        self.log(prefix+'MSE',  F.mse_loss(Y_pred, Y), sync_dist=sync_dist)
+        self.log(prefix+'MAE', F_metrics.mean_absolute_error(Y_pred, Y), sync_dist=sync_dist)
         self.log(prefix+'R2_var_weighted', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'),sync_dist=sync_dist)
         self.log(prefix+'R2_avg', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'),sync_dist=sync_dist)
-        self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)    
+        self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
+
+        loss = self.loss(Y_pred, Y)
+        self.log(prefix+'loss', loss, sync_dist=sync_dist)
+        return loss
 
     def training_step(self, training_batch, batch_id, log_prefix=''):
         X, Y = training_batch
         Y_pred = self.forward(X)
         assert not (th.isnan(X).any() or th.isnan(Y).any())
-        loss = F.mse_loss(Y_pred, Y)
-        self.log_metrics(Y_pred, Y, log_prefix) 
+        loss = self.log_metrics(Y_pred, Y, log_prefix) 
         return loss
 
     # reuse training_step(), but log validation loss
