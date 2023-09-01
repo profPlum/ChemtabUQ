@@ -14,16 +14,15 @@
 ## #SBATCH --gres=gpu:V100:2    # A100's require version of PL > v1.9.0 (e.g. pytorch_distributed_cuda3) 
 #SBATCH --gpus-per-node=2       # We need to request it "per-node" because pytorch needs visibility of all node's GPUs for some reason...
 #SBATCH --mem=50G
-#SBATCH --partition=debug
-#SBATCH --qos=debug
-#SBATCH --nodes=1 # This needs to match Trainer(nodes=...)
-#SBATCH --time=00:05:00 # TODO: add more time?
+#SBATCH --partition=general-compute #debug
+#SBATCH --qos=general-compute #debug
+#SBATCH --nodes=2 # This needs to match Trainer(nodes=...)
+#SBATCH --time=01:30:00 # TODO: add more time?
 
-#   #SBATCH --partition=general-compute #debug
-#   #SBATCH --qos=general-compute #debug
-#   #SBATCH --nodes=2 # This needs to match Trainer(nodes=...)
-#   #SBATCH --time=01:30:00 # TODO: add more time?
-
+# #SBATCH --partition=debug
+# #SBATCH --qos=debug
+# #SBATCH --nodes=1 # This needs to match Trainer(nodes=...)
+# #SBATCH --time=00:05:00 # TODO: add more time?
 ## #SBATCH --signal=SIGUSR1@90
 
 #ver=$(/bin/ls -t lightning_logs | head -n 1)
