@@ -40,7 +40,9 @@ class UQMomentsDataset(Dataset):
             subset_df = df.filter(like=like)
             if scale_output:
                 scaler = StandardScaler()
-                subset_df[:] = scaler.fit_transform(subset_df)
+                print(f'old columns: {subset_df.columns}')
+                subset_df = pd.DataFrame(scaler.fit_transform(subset_df), index=subset_df.index, columns=subset_df.columns)
+                print(f'new columns: {subset_df.columns}')
             subset_df.index = df[group_key]
             return subset_df, scaler
 
@@ -154,11 +156,14 @@ class FFRegressor(pl.LightningModule):
     def configure_optimizers(self):
         return th.optim.Adam(self.parameters(), lr=self.learning_rate)
 
+    # TODO: make sure this is a good idea and doesn't interfere with CLI?
     def configure_callbacks(self):
         """We want to log accelerator usage statistics for profiling,
         & only way to do this with CLI is to use this hook"""
-        call_backs = [DeviceStatsMonitor()] if self.device_stats_monitor else []
+        call_backs = super().configure_callbacks()
+        call_backs += [DeviceStatsMonitor()] if self.device_stats_monitor else []
         if self.patience: call_backs += [EarlyStopping(monitor='val_loss', patience=self.patience)]
+        print('all call backs: ', call_backs)
         return call_backs
 
     # sync dist makes metrics more accurate (by syncing across devices), but slows down training
