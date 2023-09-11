@@ -142,6 +142,7 @@ class FFRegressor(pl.LightningModule):
         self.loss = F.mse_loss
         if MAPE_loss: self.loss=MeanAbsolutePercentageError()
         vars(self).update(locals()); del self.self
+        self.example_input_array=th.randn(16, self.input_size)
 
         #hidden_size = input_size*4
         bulk_layers = []
@@ -149,9 +150,6 @@ class FFRegressor(pl.LightningModule):
             bulk_layers.extend([nn.SELU(), nn.Linear(hidden_size,hidden_size)])
         self.regressor = nn.Sequential(nn.BatchNorm1d(input_size),nn.Linear(input_size,hidden_size),*bulk_layers, nn.Linear(hidden_size, output_size))
         # last layer is just to change size, doesn't count as a "layer" since it's linear
-
-    def example_input_array(self):
-        return th.randn(32, self.input_size)
 
     def forward(self, inputs):
         return self.regressor(inputs)
