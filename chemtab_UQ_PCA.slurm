@@ -38,7 +38,7 @@ RESUME=F # Tell job stub to load last ckpts from this experiment
 #####################################################
 
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script!
-EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=~/data/TChem+CPV_MassR2.csv.gz --data.inputs_like=mass_CPV --data.outputs_like=$OUTPUTS --data.scale_output True"
+EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=~/data/TChem+CPV_MassR2.csv.gz --data.inputs_like=mass_CPV --data.outputs_like=$OUTPUTS --data.scale_output False"
 TRAIN_CFG="--trainer.max_epochs -1 --model.learning_rate 0.0004365158322401656 $LOSS" # --model.hidden_size=500"
 MEAN_ONLY=T # Turn off UQ for now
 

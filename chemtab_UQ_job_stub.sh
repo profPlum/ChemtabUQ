@@ -31,7 +31,8 @@ find_last_ckpt() {
     echo $last_checkpoint
 }
 
-if [ $RESUME==T ]; then
+echo RESUME: $RESUME
+if [ $RESUME == T ]; then
     # NOTE: this works for BOTH Sigma & Mean models b/c we use --trainer.default_root_dir which these checkpoint paths will implicitly be relative to!
     cd CT_logs_Mu
     last_checkpoint=$(find_last_ckpt ./$SLURM_JOB_NAME/)
@@ -58,10 +59,10 @@ mkdir mean_regressor
 mv model.* mean_regressor
 cd -
 
-if ! [ $MEAN_ONLY ]; then
+if [ $MEAN_ONLY != T ]; then
     cd CT_logs_Sigma
 	# TODO: fix bad mean regressor loading for cases with multiple jobs running at once
-    srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=UQRegressorDataModule --data.mean_regressor_fn=CT_logs_Mu/mean_regressor/model.ckpt $lightning_CLI_args #--trainer.default_root_dir=CT_logs_Sigma 
+    srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=UQRegressorDataModule --data.mean_regressor_fn=~/ChemtabUQ/CT_logs_Mu/mean_regressor/model.ckpt $lightning_CLI_args #--trainer.default_root_dir=CT_logs_Sigma 
     mkdir UQ_regressor
 	mv model.* UQ_regressor
 	cd -
