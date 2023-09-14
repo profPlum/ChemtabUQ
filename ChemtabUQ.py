@@ -147,8 +147,9 @@ class FFRegressor(pl.LightningModule):
         #hidden_size = input_size*4
         bulk_layers = []
         for i in range(self.n_layers-1): # this should be safer then potentially copying layers by reference...
-            bulk_layers.extend([nn.SELU(), nn.Linear(hidden_size,hidden_size)])
-        self.regressor = nn.Sequential(nn.BatchNorm1d(input_size),nn.Linear(input_size,hidden_size),*bulk_layers, nn.Linear(hidden_size, output_size))
+            bulk_layers.extend([nn.RELU(), nn.Linear(hidden_size,hidden_size)])
+        # IMPORTANT: don't include any batchnorm layers! They break ONNX & are redundant with selu anyways...
+        self.regressor = nn.Sequential(nn.Linear(input_size,hidden_size),*bulk_layers, nn.Linear(hidden_size, output_size))
         # last layer is just to change size, doesn't count as a "layer" since it's linear
 
     def forward(self, inputs):
