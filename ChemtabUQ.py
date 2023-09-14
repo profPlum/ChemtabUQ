@@ -262,7 +262,7 @@ def load_mean_regressor_factory(model_fn, cols):
     if model_fn.endswith('.ckpt'):
         model = FFRegressor.load_from_checkpoint(model_fn, input_size=len(cols))#.to('cuda')
     else:
-        assert False
+        assert False # why?
         import TF2PL_chemtab_wrapper
         model = TF2PL_chemtab_wrapper.wrap_mean_regressor(model_fn)
         TF2PL_chemtab_wrapper.check_Yi_consistency(cols)
