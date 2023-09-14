@@ -148,7 +148,8 @@ class FFRegressor(pl.LightningModule):
         bulk_layers = []
         for i in range(self.n_layers-1): # this should be safer then potentially copying layers by reference...
             bulk_layers.extend([nn.SELU(), nn.Linear(hidden_size,hidden_size)])
-        self.regressor = nn.Sequential(nn.BatchNorm1d(input_size),nn.Linear(input_size,hidden_size),*bulk_layers, nn.Linear(hidden_size, output_size))
+        # IMPORTANT: don't include any batchnorm layers! They break ONNX & are redundant with selu anyways...
+        self.regressor = nn.Sequential(nn.Linear(input_size,hidden_size),*bulk_layers, nn.Linear(hidden_size, output_size))
         # last layer is just to change size, doesn't count as a "layer" since it's linear
 
     def forward(self, inputs):
@@ -245,7 +246,7 @@ def load_mean_regressor_factory(model_fn, cols):
     if model_fn.endswith('.ckpt'):
         model = FFRegressor.load_from_checkpoint(model_fn, input_size=len(cols))#.to('cuda')
     else:
-        assert False
+        assert False # why?
         import TF2PL_chemtab_wrapper
         model = TF2PL_chemtab_wrapper.wrap_mean_regressor(model_fn)
         TF2PL_chemtab_wrapper.check_Yi_consistency(cols)
