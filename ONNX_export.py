@@ -2,42 +2,51 @@
 # coding: utf-8
 
 import pytorch_lightning as pl
-import torch as th
+import torch as pt
 import ChemtabUQ
 import os, sys
+import matplotlib
 
-## from here: https://stackoverflow.com/questions/76839366/tf-rep-export-graphtf-model-path-keyerror-input-1
-#def convert_names_workaround(onnx_model):
-#    from onnx import helper
-#    
-#    # Define a mapping from old names to new names
-#    name_map = {"input.1": "input_1"}
-#    
-#    # Initialize a list to hold the new inputs
-#    new_inputs = []
-#    
-#    # Iterate over the inputs and change their names if needed
-#    for inp in onnx_model.graph.input:
-#        if inp.name in name_map:
-#            # Create a new ValueInfoProto with the new name
-#            new_inp = helper.make_tensor_value_info(name_map[inp.name],
-#                                                    inp.type.tensor_type.elem_type,
-#                                                    [dim.dim_value for dim in inp.type.tensor_type.shape.dim])
-#            new_inputs.append(new_inp)
-#        else:
-#            new_inputs.append(inp)
-#    
-#    # Clear the old inputs and add the new ones
-#    onnx_model.graph.ClearField("input")
-#    onnx_model.graph.input.extend(new_inputs)
-#    
-#    # Go through all nodes in the model and replace the old input name with the new one
-#    for node in onnx_model.graph.node:
-#        for i, input_name in enumerate(node.input):
-#            if input_name in name_map:
-#                node.input[i] = name_map[input_name]
-#    return onnx_model
+def test_outputs(yt, yp):
+    import tensorflow as tf
+    MAE = lambda yt, yp, axis=None: tf.reduce_mean(tf.math.abs(yp-yt), axis=axis).numpy().item()
+    MSE = lambda yt, yp, axis=None: tf.reduce_mean((yp-yt)**2, axis=axis).numpy().item()
+    R2 = lambda yt, yp: 1-tf.reduce_mean(tf.reduce_mean((yp-yt)**2, axis=0)/tf.math.reduce_variance(yt, axis=0)).numpy().item()
+    print('sanity R^2: ', R2(yt, yp))
+    print('sanity MAE: ', MAE(yt, yp))
+    print('sanity MSE: ', MSE(yt, yp))
+    
+    import matplotlib.pyplot as plt
+    plt.imshow(yp[:5,:])
+    plt.title('Predicted Output Sample:')
+    plt.savefig('Predicted_Output_Sample.png')
+    #plt.show() # this is blocking
+    plt.imshow(yt[:5,:])
+    plt.title('Expected Output Sample:')
+    plt.savefig('Expected_Output_Sample.png')
+    #plt.show() # this is blocking
 
+    # Machine error is approximately 1e-7, 
+    # so we make sure it is within machine error tolerance.
+    assert MAE(yt, yp) < 1e-6
+
+def test_models(torch_model, TF_model):
+    in_shape = (128,25)
+    inputs = pt.randn(*in_shape).cpu()
+
+    target_outputs = torch_model.cpu().forward(inputs).detach().cpu().numpy()
+    test_inputs=inputs.cpu().detach().numpy()
+
+    try: # first assume TF_model is keras model, if it fails try treating it like raw TF model
+        actual_output=TF_model(test_inputs)
+    except Exception as e:
+        print('Failed to use TF model as keras model, with exception:\n', e, file=sys.stderr)
+        print('Retrying as raw TF model', file=sys.stderr)
+        actual_output=TF_model(input=test_inputs)['output']
+    
+    test_outputs(target_outputs, actual_output)
+
+# verified to work 9/14/23 (sanity check builtin!)
 def convert_FFRegressor_to_TF(ckpt_path):
     print(f'loading PL ckpt: {ckpt_path}')
     PL_module = ChemtabUQ.FFRegressor.load_from_checkpoint(ckpt_path, input_size=25)
@@ -49,18 +58,31 @@ def convert_FFRegressor_to_TF(ckpt_path):
     PL_module.to_onnx(onnx_model_path, #IMPORTANT: that input/output does not contain periods! (e.g. 'input.1') 
                     input_names=['input'], output_names=['output'], 
                     dynamic_axes={'input' : {0 : 'batch_size'}, # variable length axes
-                                'output' : {0 : 'batch_size'}})
+                                  'output' : {0 : 'batch_size'}})
     
     import onnx
-    from onnx_tf.backend import prepare
-    onnx_model = onnx.load(onnx_model_path) #convert_names_workaround(onnx.load(onnx_model_path))
-    tf_rep = prepare(onnx_model)
+    from onnx2keras import onnx_to_keras
+    onnx_model = onnx.load(onnx_model_path)
     tf_path=os.path.dirname(ckpt_path)+'/model_TF'
-    print(f'TF version being saved at: {tf_path}')
-    tf_rep.export_graph(tf_path)
+    try: # To Keras
+        tf_rep = onnx_to_keras(onnx_model, ['input'], name_policy="renumerate")
+        print(f'*Keras* version being saved at: {tf_path}')
+        tf_rep.save(tf_path)
+    except Exception as e: # To TF
+        print('Conversion Keras failed, with exception:\n', e, file=sys.stderr)
+        print('Retrying conversion to raw TF', file=sys.stderr)
+        from onnx_tf.backend import prepare
+        tf_rep = prepare(onnx_model)
+        print(f'*raw TF* version being saved at: {tf_path}')
+        tf_rep.export_graph(tf_path)
+   
+    # sanity check conversion (so we know models are the same)
+    test_models(PL_module, tf_rep)
+    print('done converting')
 
+# this is the test case
 if __name__=='__main__':
     # TODO: use argparser
-    ckpt_path='../CT_logs_Mu/MAPE-PCA-CT/version_13420071/checkpoints/epoch=10891-step=10892.ckpt'
+    ckpt_path='../CT_logs_Mu/Selu-Scaled-PCA-CT/version_13479785/checkpoints/epoch=5082-step=5083.ckpt'
     if len(sys.argv)>1: ckpt_path=sys.argv[1]
     convert_FFRegressor_to_TF(ckpt_path) 
