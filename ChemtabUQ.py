@@ -60,7 +60,7 @@ class UQMomentsDataset(Dataset):
 
     def to(self, device):
         self.df_mu=self.df_mu.to(device)
-        self.df_sigma=self.df_mu.to(device)
+        self.df_sigma=self.df_sigma.to(device)
         self.outs_df=self.outs_df.to(device)
         return self
 
