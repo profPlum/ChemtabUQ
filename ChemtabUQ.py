@@ -48,6 +48,7 @@ class UQMomentsDataset(Dataset):
 
         inputs_df, self.input_scaler = filter_and_scale(inputs_like, scale=False)
         outs_df, self.output_scaler = filter_and_scale(outputs_like, scale=scale_output)
+        assert scale_output ^ (self.output_scaler is None) # sanity check 
 
         self.df_mu = th.Tensor(inputs_df.groupby(group_key).mean().values).detach()
         self.df_sigma = th.Tensor(inputs_df.groupby(group_key).std().values).detach()
@@ -138,10 +139,10 @@ class FFRegressor(pl.LightningModule):
         :param patience: early stopping patience (on val loss), default is None (no early stopping). NOTE: PL has default patience as 3 (when ES is enabled).
         """
         super().__init__()
-        learning_rate *= lr_coef; del lr_coef
-        if not output_size: output_size = input_size
         self.save_hyperparameters() # save hyper-params to TB logs for better analysis later! 
 
+        learning_rate *= lr_coef; del lr_coef
+        if not output_size: output_size = input_size
         self.loss = F.mse_loss
         if MAPE_loss: self.loss=MeanAbsolutePercentageError()
         vars(self).update(locals()); del self.self
@@ -170,7 +171,7 @@ class FFRegressor(pl.LightningModule):
         return self.regressor(inputs)
 
     def configure_optimizers(self):
-        return th.optim.Adam(self.parameters(), lr=self.learning_rate)
+        return th.optim.Adam(self.parameters(), lr=self.learning_rate)#*self.lr_coef)
 
     # TODO: make sure this is a good idea and doesn't interfere with CLI?
     def configure_callbacks(self):
@@ -217,7 +218,7 @@ class UQ_DataModule(pl.LightningDataModule):
         :param batch_size: the batch size for training & validation (default set by auto_batch_size_finder)
         """
         super().__init__()
-        self.save_hyperparams() # I think this works?? Also it should work with kwd_args but slightly less 'perfectly'
+        self.save_hyperparameters() # I think this works?? Also it should work with kwd_args but slightly less 'perfectly'
         # TODO: check that it actually cooperates with the same thing in pl.LightningModule?? hopefully they can both save their hyper-params simulatneously!
 
         vars(self).update(locals()); del self.self # gotcha to make trick work
