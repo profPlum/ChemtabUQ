@@ -14,7 +14,7 @@
 #SBATCH --qos=general-compute #debug
 #SBATCH --nodes=2 # This needs to match Trainer(nodes=...)
 #SBATCH --time=01:30:00 # TODO: add more time?
-#SBATCH --job-name="Scaled-PCA-CT" # sort by information entropy, e.g. CT tells us nothing, MAPE or Big tells us a lot
+#SBATCH --job-name="Inv-Selu-Scaled-PCA-CT" # sort by information entropy, e.g. CT tells us nothing, MAPE or Big tells us a lot
 
 # #SBATCH --partition=debug
 # #SBATCH --qos=debug
@@ -31,15 +31,16 @@
 # These are the settings that when changed make other experiments
 # 'incomparable' & thus requires new experiment name
 #####################################################
-#OUTPUTS=souener
-OUTPUTS=source_CPV
+INPUTS=mass_CPV
+OUTPUTS=Yi
+#OUTPUTS=source_CPV
 LOSS= #'--model.MAPE_loss True'
 RESUME=F # Tell job stub to load last ckpts from this experiment
 #####################################################
 
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script!
-EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=~/data/TChem+CPV_MassR2.csv.gz --data.inputs_like=mass_CPV --data.outputs_like=$OUTPUTS --data.scale_output False"
-TRAIN_CFG="--trainer.max_epochs -1 --model.learning_rate 0.0004365158322401656 $LOSS" # --model.hidden_size=500"
+EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=~/data/TChem+CPV_MassR2.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True"
+TRAIN_CFG="--trainer.max_epochs -1 --model.learning_rate 0.0004365158322401656 $LOSS --model.SELU True" # --model.hidden_size=500"
 MEAN_ONLY=T # Turn off UQ for now
 
 EXTRA_PL_ARGS="$EXTRA_PL_ARGS $TRAIN_CFG" #--ckpt_path=last" # last isn't supported, it appears it doesn't work 

@@ -35,10 +35,10 @@ class UQMomentsDataset(Dataset):
         df = df[mask] # mask df to remove all group keys with only 1 element (which gives nan std)
         print('masked df len: ', len(df))
 
-        def filter_and_scale(like):
+        def filter_and_scale(like, scale: bool):
             scaler = None
             subset_df = df.filter(like=like)
-            if scale_output:
+            if scale:
                 scaler = StandardScaler()
                 print(f'old columns: {subset_df.columns}')
                 subset_df = pd.DataFrame(scaler.fit_transform(subset_df), index=subset_df.index, columns=subset_df.columns)
@@ -46,8 +46,8 @@ class UQMomentsDataset(Dataset):
             subset_df.index = df[group_key]
             return subset_df, scaler
 
-        inputs_df, self.input_scaler = filter_and_scale(inputs_like)
-        outs_df, self.output_scaler = filter_and_scale(outputs_like)
+        inputs_df, self.input_scaler = filter_and_scale(inputs_like, scale=False)
+        outs_df, self.output_scaler = filter_and_scale(outputs_like, scale=scale_output)
 
         self.df_mu = th.Tensor(inputs_df.groupby(group_key).mean().values).detach()
         self.df_sigma = th.Tensor(inputs_df.groupby(group_key).std().values).detach()
@@ -122,7 +122,7 @@ class UQErrorPredictionDataset(Dataset):
 class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100, n_layers: int=8, 
                 learning_rate: float=7.585775750291837e-08, lr_coef: float=1.0, MAPE_loss: bool=False,
-                device_stats_monitor=False, patience=None):
+                SELU=True, device_stats_monitor=False, patience=None):
         """
         Just a simple FF Network that scales
 
@@ -133,24 +133,38 @@ class FFRegressor(pl.LightningModule):
         :param learning_rate: NN learning rate (default provided by auto_lr_finder)
         :param lr_coef: the learning_rate scaling coefficient (i.e. from larger batch size across gpus)
         :param MAPE_loss: (experimental) use MAPE as loss function
+        :param SELU: uses SELU activation & initialization for normalized acivations (better than batch norm)
         :param device_stats_monitor: whether to use a device monitor (i.e. log device usage)
         :param patience: early stopping patience (on val loss), default is None (no early stopping). NOTE: PL has default patience as 3 (when ES is enabled).
         """
         super().__init__()
         learning_rate *= lr_coef; del lr_coef
         if not output_size: output_size = input_size
+        self.save_hyperparameters() # save hyper-params to TB logs for better analysis later! 
+
         self.loss = F.mse_loss
         if MAPE_loss: self.loss=MeanAbsolutePercentageError()
         vars(self).update(locals()); del self.self
         self.example_input_array=th.randn(16, self.input_size)
 
         #hidden_size = input_size*4
+        activation=nn.SELU if SELU else nn.ReLU 
         bulk_layers = []
         for i in range(self.n_layers-1): # this should be safer then potentially copying layers by reference...
-            bulk_layers.extend([nn.RELU(), nn.Linear(hidden_size,hidden_size)])
+            bulk_layers.extend([activation(), nn.Linear(hidden_size,hidden_size)])
         # IMPORTANT: don't include any batchnorm layers! They break ONNX & are redundant with selu anyways...
         self.regressor = nn.Sequential(nn.Linear(input_size,hidden_size),*bulk_layers, nn.Linear(hidden_size, output_size))
         # last layer is just to change size, doesn't count as a "layer" since it's linear
+   
+        if SELU: 
+            ## NOTE: docs specifically instruct to use nonlinearity='linear' for original SNN implementation
+            # SNN_gain=torch.nn.init.calculate_gain(nonlinearity='linear', param=None)
+            # it just so happens this gives gain=1, which is default hence no function call
+            def init_weights_glorot_normal(m):
+                if isinstance(m, nn.Linear):
+                    nn.init.xavier_normal_(m.weight)
+                    m.bias.data.fill_(0.00) # bias=0 is simplist & common
+            self.regressor.apply(init_weights_glorot_normal)
 
     def forward(self, inputs):
         return self.regressor(inputs)
@@ -203,8 +217,10 @@ class UQ_DataModule(pl.LightningDataModule):
         :param batch_size: the batch size for training & validation (default set by auto_batch_size_finder)
         """
         super().__init__()
-        vars(self).update(locals())
-        del self.self # gotcha to make trick work
+        self.save_hyperparams() # I think this works?? Also it should work with kwd_args but slightly less 'perfectly'
+        # TODO: check that it actually cooperates with the same thing in pl.LightningModule?? hopefully they can both save their hyper-params simulatneously!
+
+        vars(self).update(locals()); del self.self # gotcha to make trick work
         self.prepare_data_per_node=False
     
     def setup(self, stage=None):
