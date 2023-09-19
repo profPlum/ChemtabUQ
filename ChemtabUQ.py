@@ -1,3 +1,4 @@
+
 import os
 from typing import Any, Optional
 import pandas as pd
@@ -139,7 +140,7 @@ class FFRegressor(pl.LightningModule):
         :param patience: early stopping patience (on val loss), default is None (no early stopping). NOTE: PL has default patience as 3 (when ES is enabled).
         """
         super().__init__()
-        self.save_hyperparameters() # save hyper-params to TB logs for better analysis later! 
+        self.save_hyperparameters(ignore=['device_stats_monitor']) # save hyper-params to TB logs for better analysis later! 
 
         learning_rate *= lr_coef; del lr_coef
         if not output_size: output_size = input_size
@@ -218,7 +219,7 @@ class UQ_DataModule(pl.LightningDataModule):
         :param batch_size: the batch size for training & validation (default set by auto_batch_size_finder)
         """
         super().__init__()
-        self.save_hyperparameters() # I think this works?? Also it should work with kwd_args but slightly less 'perfectly'
+        self.save_hyperparameters(ignore=['dataset']) # I think this works?? Also it should work with kwd_args but slightly less 'perfectly'
         # TODO: check that it actually cooperates with the same thing in pl.LightningModule?? hopefully they can both save their hyper-params simulatneously!
 
         vars(self).update(locals()); del self.self # gotcha to make trick work
