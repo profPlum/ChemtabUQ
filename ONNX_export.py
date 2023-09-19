@@ -47,9 +47,10 @@ def test_models(torch_model, TF_model):
     test_outputs(target_outputs, actual_output)
 
 # verified to work 9/14/23 (sanity check builtin!)
+# Also supported onnx-TF 'backup', in case onnx2keras fails
 def convert_FFRegressor_to_TF(ckpt_path):
     print(f'loading PL ckpt: {ckpt_path}')
-    PL_module = ChemtabUQ.FFRegressor.load_from_checkpoint(ckpt_path, input_size=25)
+    PL_module = ChemtabUQ.FFRegressor.load_from_checkpoint(ckpt_path)
     print(PL_module)
 
     # save new ONNX model
@@ -79,10 +80,41 @@ def convert_FFRegressor_to_TF(ckpt_path):
     # sanity check conversion (so we know models are the same)
     test_models(PL_module, tf_rep)
     print('done converting')
+    return tf_rep, tf_path 
+
+from fit_rescaling_layer import fit_rescaling_layer, add_unit_L1_layer_constraint
+
+# TODO: finish/debug me!!
+def export_CT_model_for_ablate(ckpt_path, add_hard_l1_constraint=False):
+    """ adds additional rescaling & L1 unit constraint post-processing via layers """
+    keras_rep, model_path = convert_FFRegressor_to_TF(ckpt_path)
+    try: keras_rep.summary()
+    except: raise RuntimeError('keras representation is required for rescaling layer!')
+
+    PLD_module = ChemtabUQ.MeanRegressorDataModule.load_from_checkpoint(ckpt_path)  
+    moments_dataset = PLD_module.dataset.moments_dataset    
+    
+    output = input_ = keras.layers.Input(shape=keras_rep.input_shape[1:], name='input_1')
+
+    if moments_dataset.input_scaler:
+        print('fitting input rescaling layer!')
+        # IMPORTANT: you can't use fit_rescaling_layer for the input scaler b/c it is designed for output scaler only!
+        #input_scaling_layer, (m,b) = fit_rescaling_layer(moments_dataset.input_scaler, layer_name='input_rescaling')
+        output = moments_dataset.input_scaler.transform(output) #input_scaling_layer(input_)
+    output = keras_rep(output)
+    if moments_dataset.output_scaler:
+        print('fitting input rescaling layer!')
+        #output_scaling_layer, (m,b) = fit_rescaling_layer(moments_dataset.output_scaler, layer_name='output_rescaling')
+        output=moments_dataset.output_scaler.inverse_transform(output) # does this work??
+
+    wrapper = keras.models.Model(inputs=input_, outputs=output) 
+    return wrapper
 
 # this is the test case
 if __name__=='__main__':
-    # TODO: use argparser
+    
     ckpt_path='../CT_logs_Mu/Selu-Scaled-PCA-CT/version_13479785/checkpoints/epoch=5082-step=5083.ckpt'
     if len(sys.argv)>1: ckpt_path=sys.argv[1]
-    convert_FFRegressor_to_TF(ckpt_path) 
+    keras_rep = convert_FFRegressor_to_TF(ckpt_path)
+    try: keras_rep.summary()
+    except: raise RuntimeError('keras representation is required for rescaling layer!') 
