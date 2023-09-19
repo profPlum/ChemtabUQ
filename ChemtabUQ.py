@@ -185,28 +185,33 @@ class FFRegressor(pl.LightningModule):
         return call_backs
 
     # sync dist makes metrics more accurate (by syncing across devices), but slows down training
-    def log_metrics(self, Y_pred, Y, prefix='', sync_dist=True):
+    def log_metrics(self, Y_pred, Y, val_metrics=False, sync_dist=True):
         """ computes/logs metrics & loss for one step """
+        prefix = 'val_' if val_metrics else ''
         self.log(prefix+'MSE',  F.mse_loss(Y_pred, Y), sync_dist=sync_dist)
         self.log(prefix+'MAE', F_metrics.mean_absolute_error(Y_pred, Y), sync_dist=sync_dist)
         self.log(prefix+'R2_var_weighted', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'),sync_dist=sync_dist)
         self.log(prefix+'R2_avg', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'),sync_dist=sync_dist)
         self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
-
+       
+        if val_metrics: # For now we are using MAPE for evaluating hps due to its importance in exponential distributions
+           self.log('hp_metric', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
+ 
         loss = self.loss(Y_pred, Y)
         self.log(prefix+'loss', loss, sync_dist=sync_dist)
         return loss
 
-    def training_step(self, training_batch, batch_id, log_prefix=''):
+    def training_step(self, training_batch, batch_id, val_metrics=False):
         X, Y = training_batch
         Y_pred = self.forward(X)
         assert not (th.isnan(X).any() or th.isnan(Y).any())
-        loss = self.log_metrics(Y_pred, Y, log_prefix) 
+        loss = self.log_metrics(Y_pred, Y, val_metrics) 
         return loss
 
     # reuse training_step(), but log validation loss
     def validation_step(self, val_batch, batch_id):
-        self.training_step(val_batch, batch_id, log_prefix='val_')
+        self.training_step(val_batch, batch_id, val_metrics=True)
+        # with val_metrics=True it will log hp_metric too! 
 
 # TODO: should do moments preprocessing in the prep function stage then save the file to pickle with hash based on arguments & reload later
 # doubly important since we are seperating the mean regressor fitting from the UQ model fitting!
