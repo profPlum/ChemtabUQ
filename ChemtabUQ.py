@@ -31,10 +31,15 @@ class UQMomentsDataset(Dataset):
         df = pd.read_csv(csv_fn)
         print('original df len: ', len(df))
 
-        valid_group_keys = df.groupby(group_key).std().dropna().index
-        mask = np.isin(df[group_key], valid_group_keys)
-        df = df[mask] # mask df to remove all group keys with only 1 element (which gives nan std)
-        print('masked df len: ', len(df))
+        if group_key: # if group key is set, ensure groups have >1 element per (for UQ moments)
+            valid_group_keys = df.groupby(group_key).std().dropna().index
+            mask = np.isin(df[group_key], valid_group_keys)
+            df = df[mask] # mask df to remove all group keys with only 1 element (which gives nan std)
+            print('masked df len: ', len(df))
+        else: # if it is unset assume we are doing mean regressor & make group=index
+            group_key='group'
+            df['group']=df.index
+            print('no grouping!')
 
         def filter_and_scale(like, scale: bool):
             scaler = None
@@ -52,13 +57,14 @@ class UQMomentsDataset(Dataset):
         assert scale_output ^ (self.output_scaler is None) # sanity check 
 
         self.df_mu = th.Tensor(inputs_df.groupby(group_key).mean().values).detach()
-        self.df_sigma = th.Tensor(inputs_df.groupby(group_key).std().values).detach()
+        self.df_sigma = th.Tensor(inputs_df.groupby(group_key).std(unbiased=False).values).detach()
         self.outs_df = th.Tensor(outs_df.groupby(group_key).mean().values).detach()
 
         self.input_col_names = inputs_df.columns
         self.output_col_names = outs_df.columns
 
         print('reduced df len: ', self.df_sigma.shape[0])
+        assert self.df_sigma.shape[0]>1000
 
     def to(self, device):
         self.df_mu=self.df_mu.to(device)
