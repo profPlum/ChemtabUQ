@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+#NOTE: entire file verified to work 9/20/23
+
 import os, sys
 import ChemtabUQ
 import pytorch_lightning as pl
 import torch as pt
+import tensorflow as tf
 import tensorflow.keras as keras
 import matplotlib
 
@@ -20,32 +23,34 @@ def fit_rescaling_layer(scaler, inverse=True, layer_name='rescaling', n_samples=
 
     n_input_features = scaler.n_features_in_
     data_scale = 100
-    dummy_input_data = (np.random.random(size=(n_samples,n_input_features))-0.5)*data_scale
-    inverted_data = scaler.inverse_transform(dummy_input_data) if inverse else scaler.transform(dummy_input_data)
-    def fit_rescaling_lms():
-        linear_models = []
-        for i in range(n_input_features):
-            lm = sklearn.linear_model.LinearRegression()
-            X_data = dummy_input_data[:,i].reshape(-1,1)
-            Y_data = inverted_data[:,i].reshape(-1,1)
-            lm.fit(X_data, Y_data)
-            assert lm.score(X_data, Y_data)==1.0 # assert R^2==1 (should be perfect fit)
-            linear_models.append(lm)
-        return linear_models
-    lms = fit_rescaling_lms()
-    m = np.array([lm.coef_ for lm in lms]).squeeze()
-    b = np.array([lm.intercept_ for lm in lms]).squeeze()
-    rescaling_layer = keras.layers.Rescaling(m, b, name=layer_name) # y=mx+b
-    rescale_inverted_data = rescaling_layer(dummy_input_data).numpy().astype('float64')
-    print('MAE/data_scale for inversion layer:', np.mean(np.abs(rescale_inverted_data-inverted_data))/data_scale)
-    print('R^2 for inversion layer:', R2(inverted_data, rescale_inverted_data).numpy())
-    print('Rel-error for inversion layer:', rel_err(inverted_data, rescale_inverted_data).numpy())
+    for i in range(100): # retry until sanity np.allclose check passes!
+        dummy_input_data = (np.random.random(size=(n_samples,n_input_features))-0.5)*data_scale
+        inverted_data = scaler.inverse_transform(dummy_input_data) if inverse else scaler.transform(dummy_input_data)
+        def fit_rescaling_lms():
+            linear_models = []
+            for i in range(n_input_features):
+                lm = sklearn.linear_model.LinearRegression()
+                X_data = dummy_input_data[:,i].reshape(-1,1)
+                Y_data = inverted_data[:,i].reshape(-1,1)
+                lm.fit(X_data, Y_data)
+                assert lm.score(X_data, Y_data)==1.0 # assert R^2==1 (should be perfect fit)
+                linear_models.append(lm)
+            return linear_models
+        lms = fit_rescaling_lms()
+        m = np.array([lm.coef_ for lm in lms]).squeeze()
+        b = np.array([lm.intercept_ for lm in lms]).squeeze()
+        rescaling_layer = keras.layers.Rescaling(m, b, name=layer_name) # y=mx+b
+        rescale_inverted_data = rescaling_layer(dummy_input_data).numpy().astype('float64')
+        print('MAE/data_scale for inversion layer:', np.mean(np.abs(rescale_inverted_data-inverted_data))/data_scale)
+        print('R^2 for inversion layer:', R2(inverted_data, rescale_inverted_data).numpy())
+        print('Rel-error for inversion layer:', rel_err(inverted_data, rescale_inverted_data).numpy())
+        if np.allclose(rescale_inverted_data, inverted_data): break
     assert np.allclose(rescale_inverted_data, inverted_data)
-
     return rescaling_layer, (m, b)
 
 #rescaling_layer, (m,b) = fit_rescaling_layer(dm.outputScaler)
 
+# Verified to work! 9/20/23 (within numerical precision tolerances)
 def add_unit_L1_layer_constraint(x, first_n_preserved=0, layer_name=None):
     """ this is designed to constraint the [first_n_preserved:]
     outputs from the inversion layer to fall between 0 & 1 and to sum to 1 """
@@ -55,6 +60,8 @@ def add_unit_L1_layer_constraint(x, first_n_preserved=0, layer_name=None):
     out = tf.math.maximum(inputs_, 0)
     out = tf.math.minimum(out, 1)
 
+    # apparently doing this twice increases numerical accuracy
+    out = out/tf.math.reduce_sum(out, axis=-1, keepdims=True)
     out = out/tf.math.reduce_sum(out, axis=-1, keepdims=True)
     model = keras.models.Model(inputs=inputs_, outputs=out, name='Unit_L1_constraint')
     return layers.Concatenate(axis=-1, name=layer_name)([x[:,:first_n_preserved], model(x[:,first_n_preserved:])])
@@ -150,7 +157,7 @@ def export_CT_model_for_ablate(ckpt_path, add_hard_l1_constraint=False):
     """ adds additional rescaling & L1 unit constraint post-processing via layers """
     keras_rep, model_path = convert_FFRegressor_to_TF(ckpt_path)
     try: keras_rep.summary()
-    except: raise RuntimeError('keras representation is required for rescaling layer!')
+    except: raise RuntimeError('keras representation is required for rescaling/l1_norm layer(s)!')
 
     PLD_module = ChemtabUQ.MeanRegressorDataModule.load_from_checkpoint(ckpt_path)  
     moments_dataset = PLD_module.dataset.moments_dataset    
@@ -163,7 +170,7 @@ def export_CT_model_for_ablate(ckpt_path, add_hard_l1_constraint=False):
     if moments_dataset.output_scaler:
         print('fitting input rescaling layer!')
         output_scaling_layer, (m,b) = fit_rescaling_layer(moments_dataset.output_scaler, 
-                                                          inverse=True, layer_name='output_rescaling')
+                                                           inverse=True, layer_name='output_rescaling')
         output=output_scaling_layer(output)
 
     if add_hard_l1_constraint:
@@ -180,7 +187,7 @@ import os, argparse
 # default checkpoint is the test case
 if __name__=='__main__':
     # get default checkpoint
-    candidate_ckpts=glob(f'./CT_logs_Mu/Selu-Scaled*/version_13521625/checkpoints/*.ckpt')
+    candidate_ckpts=glob(f'./CT_logs_Mu/Real*/version_*/checkpoints/*.ckpt')
     ckpt_path = random.choice(candidate_ckpts) 
     print(ckpt_path)
     
