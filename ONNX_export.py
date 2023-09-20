@@ -152,7 +152,7 @@ def convert_FFRegressor_to_TF(ckpt_path):
 
 ##################################################################
 
-# TODO: finish/debug me!!
+# verified to work 9/20/23
 def export_CT_model_for_ablate(ckpt_path, add_hard_l1_constraint=False):
     """ adds additional rescaling & L1 unit constraint post-processing via layers """
     keras_rep, model_path = convert_FFRegressor_to_TF(ckpt_path)
