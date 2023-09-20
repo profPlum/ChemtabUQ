@@ -2,6 +2,12 @@ from glob import glob
 import random
 import os, argparse
 
+import pytorch_lightning as pl
+import tensorflow as tf # MUST import tensorflow SECOND or else you will encounter ambiguous error!
+from tensorflow import keras
+from tensorflow.keras import layers as L
+
+# NOTE: currently unused, was used previously to verify make_aggregate_regressor()
 def inspect_outputs(outputs, model_name: str):
     plt.imshow(outputs['dynamic_source_prediction'])
     plt.title(f'CPV_source-{model_name}_outputs')
@@ -16,9 +22,9 @@ def inspect_outputs(outputs, model_name: str):
 # verified to work! 9/20/23
 def make_aggregate_regressor(CPV_source_ckpt: str, souener_ckpt: str, inv_ckpt: str):
     """ makes aggergate regressor with the same interfaces as CT V1 from individual models given from CT V2"""
-    print('Inv checkpoint: ', Inv_ckpt)
     print('CPV_source checkpoint: ', CPV_source_ckpt)
-    print('Energy_source checkpoints', Souener_ckpt)
+    print('Inv checkpoint: ', inv_ckpt)
+    print('Energy_source checkpoints', souener_ckpt)
     
     import ONNX_export
     CPV_source_model = ONNX_export.export_CT_model_for_ablate(CPV_source_ckpt)
@@ -51,7 +57,8 @@ def make_aggregate_regressor(CPV_source_ckpt: str, souener_ckpt: str, inv_ckpt: 
 if __name__=='__main__':
     # get default checkpoint
     candidate_ckpts=glob(f'./CT_logs_Mu/*/version_*/checkpoints/*.ckpt')
-    print('all candidate checkpoints: ', candidate_ckpts)
+    print('all candidate checkpoints: ')
+    print(candidate_ckpts)
 
     parser = argparse.ArgumentParser(description='packages/aggergates V2 CT models for ablate')
     parser.add_argument('--CPV_source_path', type=str, required=True, help='path to checkpoint of V2 CPV_source model')
@@ -59,14 +66,22 @@ if __name__=='__main__':
     parser.add_argument('--Inverse_path', type=str, required=True, help='path to checkpoint of V2 Inverse model')
     parser.add_argument('--CPV_Weight_matrix_path', type=str, required=True, help='path to the W-matrix csv (the matrix used to compress Yis to CPVs)')
     args = parser.parse_args()
-
-    config_path = lambda ckpt_path: os.path.dirname(ckpt_path) + '/../config.yaml'
+ 
+    # IMPORTANT: MUST MATCH the 'model_name' variable in adapt_test_targets.py!!
+    out_dir = 'PCDNNV2_decomp' # (advised not to change from PCDNNV2_decomp) 
+    os.system('rm -r PCDNNV2_decomp') 
+    # done without reference to out_dir as a sanity check on adapt_test_targets
 
     aggergate_regressor = make_aggregate_regressor(args.CPV_source_path, args.Souener_path, args.Inverse_path)
-    os.system('mkdir -p PCDNNV2_decomp/experiment_records') # for config.yaml files
-    aggergate_regressor.save('PCDNNV2_decomp/regressor')
-    os.system(f'cp {config_path(args.CPV_source_path)} PCDNNV2_decomp/experiment_records/CPV_source_config.yaml')
-    os.system(f'cp {config_path(args.Inverse_path)} PCDNNV2_decomp/experiment_records/Inverse_config.yaml')
-    os.system(f'cp {config_path(args.Souener_path)} PCDNNV2_decomp/experiment_records/Souener_config.yaml')
-    os.system(f'cp {args.CPV_Weight_matrix_path} PCDNNV2_decomp/weights.csv')
+    os.system(f'mkdir -p {out_dir}/experiment_records') # for config.yaml files
+    aggergate_regressor.save(f'{out_dir}/regressor')
+ 
+    config_path = lambda ckpt_path: os.path.dirname(ckpt_path) + '/../config.yaml'
+    os.system(f'cp {config_path(args.CPV_source_path)} {out_dir}/experiment_records/CPV_source_config.yaml')
+    os.system(f'cp {config_path(args.Inverse_path)} {out_dir}/experiment_records/Inverse_config.yaml')
+    os.system(f'cp {config_path(args.Souener_path)} {out_dir}/experiment_records/Souener_config.yaml')
+ 
+    import pandas as pd
+    weights = pd.read_csv(args.CPV_Weight_matrix_path, index_col=0)
+    weights.to_csv(f'{out_dir}/weights.csv')
     import adapt_test_targets # this will automatically build/save test targets for use by ablate
