@@ -57,7 +57,7 @@ class UQMomentsDataset(Dataset):
         assert scale_output ^ (self.output_scaler is None) # sanity check 
 
         self.df_mu = th.Tensor(inputs_df.groupby(group_key).mean().values).detach()
-        self.df_sigma = th.Tensor(inputs_df.groupby(group_key).std(unbiased=False).values).detach()
+        self.df_sigma = th.Tensor(inputs_df.groupby(group_key).std(ddof=0).values).detach()
         self.outs_df = th.Tensor(outs_df.groupby(group_key).mean().values).detach()
 
         self.input_col_names = inputs_df.columns

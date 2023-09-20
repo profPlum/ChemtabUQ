@@ -21,7 +21,7 @@ echo num nodes: $num_nodes
 diagnostic_CLI_args="--trainer.logger=pytorch_lightning.loggers.TensorBoardLogger --trainer.logger.save_dir=. --trainer.logger.name=$SLURM_JOB_NAME --trainer.logger.version=$SLURM_JOB_ID" #--trainer.logger.save_dir=ChemtabUQ_TBlogs"
 diagnostic_CLI_args="$diagnostic_CLI_args --trainer.profiler simple --model.device_stats_monitor True --trainer.track_grad_norm 2"
 EXTRA_PL_ARGS1="$EXTRA_PL_ARGS $PL_MAX_EPOCHS $diagnostic_CLI_args" # NOTE: EXTRA_PL_ARGS should be an environment variable given by the user when submitting sbatch!!
-lightning_CLI_args="$EXTRA_PL_ARGS1 --trainer.num_nodes=$num_nodes --trainer.devices=2 --trainer.accelerator=gpu --trainer.strategy=ddp --trainer.gradient_clip_algorithm=value --trainer.gradient_clip_val 0.25"
+lightning_CLI_args="$EXTRA_PL_ARGS1 --trainer.num_nodes=$num_nodes --trainer.devices=2 --trainer.accelerator=gpu --trainer.strategy=ddp --trainer.gradient_clip_algorithm=value" # --trainer.gradient_clip_val 0.25"
 # NOTE: gradient_clip_value=0.5 recommended by PL docs
 # NOTE: --max_epochs -1 --> means no max epochs (i.e. fit for entire allocation time)
 
