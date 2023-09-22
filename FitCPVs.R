@@ -25,7 +25,7 @@ glmnet=function(formula, data, ...) #TODO: figure out corresponding method for p
 # Accept n_PCs from env variable!
 n_PCs=as.integer(Sys.getenv()['N_CPVS'])
 if (is.na(n_PCs)) n_PCs = 25 # default is 25 (1-to-1)
-cat('n_PCs: ', n_PCs, '\n')
+cat('n_CPVs: ', n_PCs, '(change via N_CPVS env var)\n')
 
 #Chemtab_fn = '~/Downloads/TChem_collated.csv.gz'
 Chemtab_fn = commandArgs(trailingOnly = T)[[1]]
@@ -60,7 +60,7 @@ export_CPVs_and_rotation = function(variance_weighted=T) {
   rownames(rotation) = colnames(mass_frac_data)
   colnames(rotation) = paste0('CPV_', 1:n_PCs-1) # colnames should match exactly the format from V1
   rotation = cbind(zmix=coef(zmix_lm)[-1], rotation) # colnames should match exactly the format from V1
-  View(rotation[1:5, 1:5])
+  #View(rotation[1:5, 1:5])
 
   # NOTE: apparently using linear models here has a noticable decrease on R2 (though slight), so we'll avoid it
   # rotation = fit_linear_transform(mass_frac_data, cbind(Chemtab_data$zmix, mass_PCA$x))
@@ -90,7 +90,7 @@ export_CPVs_and_rotation = function(variance_weighted=T) {
   colnames(CPV_sources) = colnames(CPV_sources) %>% paste0('source_', .)
 
   Chemtab_data = cbind(Chemtab_data, mass_PCs, CPV_sources)
-  write.csv(Chemtab_data, file=paste0('Chemtab_data', ifelse(variance_weighted, '_MassR2', ''),'.csv.gz'))
+  write.csv(Chemtab_data, file=paste0('TChem+CPVs', ifelse(variance_weighted, '_MassR2', ''),'.csv.gz'))
 
   ###############################################################################################
 }
