@@ -18,12 +18,13 @@ echo num nodes: $num_nodes
 # NOTE: EXTRA_PL_ARGS should be an environment variable given by the user when submitting sbatch!!
 
 diagnostic_CLI_args="--trainer.logger=pytorch_lightning.loggers.TensorBoardLogger --trainer.logger.save_dir=. --trainer.logger.name=$SLURM_JOB_NAME --trainer.logger.version=$SLURM_JOB_ID" #--trainer.logger.save_dir=ChemtabUQ_TBlogs"
-diagnostic_CLI_args="$diagnostic_CLI_args --trainer.profiler simple --trainer.callbacks pytorch_lightning.callbacks.DeviceStatsMonitor --trainer.track_grad_norm 2"
+diagnostic_CLI_args="$diagnostic_CLI_args --trainer.profiler simple --trainer.callbacks pytorch_lightning.callbacks.DeviceStatsMonitor" #--trainer.track_grad_norm 2"
 lightning_CLI_args="$EXTRA_PL_ARGS $diagnostic_CLI_args --trainer.num_nodes=$num_nodes --trainer.devices=2 --trainer.accelerator=gpu --trainer.strategy=ddp"
 
 # IMPORTANT: gradient_clip defaults set to --trainer.gradient_clip_algorithm=value --trainer.gradient_clip_val=0.5 (inside ChemtabUQ.py)
 # NOTE: gradient_clip_value=0.5 recommended by PL docs
 # NOTE: --max_epochs -1 --> means no max epochs (i.e. fit for entire allocation time)
+# NOTE: --trainer.track_grad_norm 2 is now done automatically inside the model in a way that is compatible with PL v2.*
 
 find_last_ckpt() {
     last_checkpoint=$(/bin/ls -t $(/bin/find "$1" -name "*.ckpt") | head -n 1)
@@ -58,6 +59,8 @@ srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=MeanRegres
 mkdir mean_regressors
 mv model.ckpt mean_regressors/model-${SLURM_JOB_ID}.ckpt
 cd -
+
+echo $(tail -n 1 $SLURM_JOB_NAME/version_$SLURM_JOB_ID/checkpoints/*.ckpt)
 
 if [ $MEAN_ONLY != T ]; then
     cd CT_logs_Sigma

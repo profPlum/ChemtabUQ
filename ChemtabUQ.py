@@ -17,6 +17,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.cli import LightningCLI, LightningArgumentParser
 from pytorch_lightning.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
 from pytorch_lightning.callbacks import DeviceStatsMonitor, EarlyStopping
+from pytorch_lightning.utilities import grad_norm # for grad-norm tracking
 
 # TODO: put inside prepare method for LigthningDataModule! (should only happen once then result saved to disk)
 class UQMomentsDataset(Dataset):
@@ -146,7 +147,7 @@ class FFRegressor(pl.LightningModule):
         :param patience: early stopping patience (on val loss), default is None (no early stopping). NOTE: PL has default patience as 3 (when ES is enabled).
         """
         super().__init__()
-        self.save_hyperparameters(ignore=['device_stats_monitor']) # save hyper-params to TB logs for better analysis later! 
+        self.save_hyperparameters(ignore=['input_size', 'output_size']) # save hyper-params to TB logs for better analysis later! 
 
         learning_rate *= lr_coef; del lr_coef
         if not output_size: output_size = input_size
@@ -180,15 +181,10 @@ class FFRegressor(pl.LightningModule):
     def configure_optimizers(self):
         return th.optim.Adam(self.parameters(), lr=self.learning_rate)#*self.lr_coef)
 
-    ## TODO: make sure this is a good idea and doesn't interfere with CLI?
-    #def configure_callbacks(self):
-    #    """We want to log accelerator usage statistics for profiling,
-    #    & only way to do this with CLI is to use this hook"""
-    #    call_backs = super().configure_callbacks()
-    #    call_backs += [DeviceStatsMonitor()] if self.device_stats_monitor else []
-    #    if self.patience: call_backs += [EarlyStopping(monitor='val_loss', patience=self.patience)]
-    #    print('all call backs: ', call_backs)
-    #    return call_backs
+    # Track grad norm, instructions from here: 
+    # https://github.com/Lightning-AI/lightning/pull/16745
+    def on_before_optimizer_step(self, optimizer, *args):
+        self.log_dict(grad_norm(self, norm_type=2)) # inspect (unscaled) gradients here
 
     # sync dist makes metrics more accurate (by syncing across devices), but slows down training
     def log_metrics(self, Y_pred, Y, val_metrics=False, sync_dist=True):
@@ -310,8 +306,6 @@ class MyLightningCLI(pl.cli.LightningCLI):
         parser.link_arguments(['trainer.devices', 'trainer.num_nodes'], 'model.lr_coef', apply_on='parse', compute_fn=lambda devices, num_nodes: int(num_nodes)*int(devices))
         parser.link_arguments(['data.dataset'], 'model.input_size', compute_fn=lambda dataset: next(iter(dataset))[0].shape[0], apply_on='instantiate') # holyshit this works!
         parser.link_arguments(['data.dataset'], 'model.output_size', compute_fn=lambda dataset: next(iter(dataset))[1].shape[0], apply_on='instantiate')
-        #parser.add_argument('--model_name', type=str, default=None, help='name of the model for saving', required=False)   
- 
         #get_shape = lambda ds, output=False: next(iter(dataset))[int(output)].shape[0] # shape 0 size batching is not applied yet, it is a 1d vector...    
         #parser.link_arguments(['data.dataset'], 'model.input_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=False)) # holyshit this works!
         #parser.link_arguments(['data.dataset'], 'model.output_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=True))
