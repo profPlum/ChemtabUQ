@@ -139,10 +139,15 @@ class MLPSkipBlock(nn.Module):
             x=self.activation()(layer(x))
         return self.activation(self.layers[-1](x) + inputs*self.skip)
 
+# TODO: test me!
+def RPDLoss(output, target):
+  return th.mean(th.abs(target - output) / ((th.abs(target) + th.abs(output)) / 2))
+
 class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
                  n_layers: int=8, learning_rate: float=7.585775750291837e-08, lr_coef: float=1.0, 
-                 MAPE_loss: bool=False, SELU: bool = True, skip_connections=False, droput_rate=0.0):
+                 MAPE_loss: bool=False, RDP_loss: bool=False, SELU: bool = True,
+                 skip_connections=False, droput_rate=0.0):
         """
         Just a simple FF Network that scales
 
@@ -158,12 +163,15 @@ class FFRegressor(pl.LightningModule):
         :param patience: early stopping patience (on val loss), default is None (no early stopping). NOTE: PL has default patience as 3 (when ES is enabled).
         """
         super().__init__()
-        self.save_hyperparameters(ignore=['input_size', 'output_size']) # save hyper-params to TB logs for better analysis later! 
+        assert not (MAPE_loss and RDP_loss)
+        self.save_hyperparameters() # save hyper-params to TB logs for better analysis later! 
 
         learning_rate *= lr_coef; del lr_coef
         if not output_size: output_size = input_size
         self.loss = F.mse_loss
         if MAPE_loss: self.loss=MeanAbsolutePercentageError()
+        elif RDP_loss: self.loss=RPDLoss
+        
         vars(self).update(locals()); del self.self
         self.example_input_array=th.randn(16, self.input_size)
 
@@ -219,7 +227,8 @@ class FFRegressor(pl.LightningModule):
         self.log(prefix+'R2_var_weighted', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'),sync_dist=sync_dist)
         self.log(prefix+'R2_avg', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'),sync_dist=sync_dist)
         self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
-       
+        self.log(prefix+'RDP', RPDLoss(Y_pred, Y), sync_dist=sync_dist)      
+ 
         if val_metrics: # For now we are using MAPE for evaluating hps due to its importance in exponential distributions
            self.log('hp_metric', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
  
