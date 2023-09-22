@@ -128,10 +128,21 @@ class UQErrorPredictionDataset(Dataset):
         (mu, sigma), outputs = self.moments_dataset[index]
         return  th.cat((mu, sigma), axis=-1), self.SE_model[index]
 
+# TODO: test me!
+class MLPSkipBlock(nn.Module):
+    def __init__(self, width, activation=nn.ReLU, n_layers=2, skip=True):
+        vars(self).update(locals())
+        self.layers=nn.ModuleList([nn.Linear(width,width) for i in range(n_layers)])
+    def forward(self, inputs):
+        x=inputs
+        for layer in self.layers[:-1]:
+            x=self.activation()(layer(x))
+        return self.activation(self.layers[-1](x) + inputs*self.skip)
+
 class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
                  n_layers: int=8, learning_rate: float=7.585775750291837e-08, lr_coef: float=1.0, 
-                 MAPE_loss: bool=False, SELU: bool = True):
+                 MAPE_loss: bool=False, SELU: bool = True, skip_connections=False, droput_rate=0.0):
         """
         Just a simple FF Network that scales
 
@@ -156,16 +167,26 @@ class FFRegressor(pl.LightningModule):
         vars(self).update(locals()); del self.self
         self.example_input_array=th.randn(16, self.input_size)
 
-        #hidden_size = input_size*4
-        activation=nn.SELU if SELU else nn.ReLU 
-        bulk_layers = []
-        for i in range(self.n_layers-1): # this should be safer then potentially copying layers by reference...
-            bulk_layers.extend([activation(), nn.Linear(hidden_size,hidden_size)])
+        # TODO: test me!
+        n_layers_per_block=2
+        def activation_dropout(): # instantiate an activation+dropout module
+            activation=nn.SELU if SELU else nn.ReLU
+            dropout=nn.AlphaDropout if SELU else nn.Dropout
+            return nn.Sequential(activation(), dropout(p=droput_rate))
+ 
+        # TODO: test me! 
+        bulk_layers = [MLPSkipBlock(hidden_size, activation_dropout, n_layers=n_layers_per_block, skip=skip_connections) for i in range((n_layers-1)//n_layers_per_block)]
+        if (n_layers-1)%n_layers_per_block>0: bulk_layers.extend([nn.Linear(hidden_size,hidden_size), activation()])       
+        # reason for -1 is b/c we implicitly add another layer at the end as 'padding' to adapt to chosen input/output sizes
+ 
+        #for i in range(self.n_layers-1): # this should be safer then potentially copying layers by reference...
+        #    bulk_layers.extend([activation(), nn.Linear(hidden_size,hidden_size)])
+
         # IMPORTANT: don't include any batchnorm layers! They break ONNX & are redundant with selu anyways...
         self.regressor = nn.Sequential(nn.Linear(input_size,hidden_size),*bulk_layers, nn.Linear(hidden_size, output_size))
-        # last layer is just to change size, doesn't count as a "layer" since it's linear
+        # first layer is just to change size, doesn't count as a "layer" since it's linear*linear
    
-        if SELU: 
+        if SELU:
             ## NOTE: docs specifically instruct to use nonlinearity='linear' for original SNN implementation
             # SNN_gain=torch.nn.init.calculate_gain(nonlinearity='linear', param=None)
             # it just so happens this gives gain=1, which is default hence no function call
@@ -173,7 +194,10 @@ class FFRegressor(pl.LightningModule):
                 if isinstance(m, nn.Linear):
                     nn.init.xavier_normal_(m.weight)
                     m.bias.data.fill_(0.00) # bias=0 is simplist & common
+                    init_weights_glorot_normal.hits=True
+            init_weights_glorot_normal.hits=False
             self.regressor.apply(init_weights_glorot_normal)
+            assert init_weights_glorot_normal.hits
 
     def forward(self, inputs):
         return self.regressor(inputs)
