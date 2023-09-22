@@ -12,7 +12,7 @@ glmnet_R2 = function(glmnet_cv_out, s='lambda.1se') {
 coef.cv.glmnet = function(cv, s='lambda.1se', ...) {
   lm_coefs_raw = glmnet::coef.glmnet(cv, s=s, ...)
   lm_coefs = as.vector(lm_coefs_raw)
-  names(lm_coefs) = rownames(lm_coefs_raw)
+  names(lm_coefs) = gsub('`', '', rownames(lm_coefs_raw))
   return(lm_coefs)
 }
 
@@ -24,7 +24,7 @@ glmnet=function(formula, data, ...) #TODO: figure out corresponding method for p
 
 # Accept n_PCs from env variable!
 n_PCs=as.integer(Sys.getenv()['N_CPVS'])
-if (is.na(n_PCs_CLI)) n_PCs = 25 # default is 25 (1-to-1)
+if (is.na(n_PCs)) n_PCs = 25 # default is 25 (1-to-1)
 cat('n_PCs: ', n_PCs, '\n')
 
 #Chemtab_fn = '~/Downloads/TChem_collated.csv.gz'
@@ -33,7 +33,7 @@ cat('Chemtab_fn: ', Chemtab_fn, '\n')
 cat('CDing to data directory.\n') # AFTER loading csv...
 Sys.sleep(1)
 
-Chemtab_data = read_csv(Chemtab_fn)
+Chemtab_data = read_csv(Chemtab_fn) #%>% 
 mass_frac_data = Chemtab_data %>% select(starts_with('Yi'))
 souspec_data = Chemtab_data %>% select(starts_with('souspec'))
 
