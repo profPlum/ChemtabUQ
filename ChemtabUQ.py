@@ -128,9 +128,9 @@ class UQErrorPredictionDataset(Dataset):
         return  th.cat((mu, sigma), axis=-1), self.SE_model[index]
 
 class FFRegressor(pl.LightningModule):
-    def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100, n_layers: int=8, 
-                learning_rate: float=7.585775750291837e-08, lr_coef: float=1.0, MAPE_loss: bool=False,
-                SELU=True, device_stats_monitor=False, patience=None):
+    def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
+                 n_layers: int=8, learning_rate: float=7.585775750291837e-08, lr_coef: float=1.0, 
+                 MAPE_loss: bool=False, SELU: bool = True):
         """
         Just a simple FF Network that scales
 
@@ -180,15 +180,15 @@ class FFRegressor(pl.LightningModule):
     def configure_optimizers(self):
         return th.optim.Adam(self.parameters(), lr=self.learning_rate)#*self.lr_coef)
 
-    # TODO: make sure this is a good idea and doesn't interfere with CLI?
-    def configure_callbacks(self):
-        """We want to log accelerator usage statistics for profiling,
-        & only way to do this with CLI is to use this hook"""
-        call_backs = super().configure_callbacks()
-        call_backs += [DeviceStatsMonitor()] if self.device_stats_monitor else []
-        if self.patience: call_backs += [EarlyStopping(monitor='val_loss', patience=self.patience)]
-        print('all call backs: ', call_backs)
-        return call_backs
+    ## TODO: make sure this is a good idea and doesn't interfere with CLI?
+    #def configure_callbacks(self):
+    #    """We want to log accelerator usage statistics for profiling,
+    #    & only way to do this with CLI is to use this hook"""
+    #    call_backs = super().configure_callbacks()
+    #    call_backs += [DeviceStatsMonitor()] if self.device_stats_monitor else []
+    #    if self.patience: call_backs += [EarlyStopping(monitor='val_loss', patience=self.patience)]
+    #    print('all call backs: ', call_backs)
+    #    return call_backs
 
     # sync dist makes metrics more accurate (by syncing across devices), but slows down training
     def log_metrics(self, Y_pred, Y, val_metrics=False, sync_dist=True):
@@ -305,7 +305,8 @@ class UQRegressorDataModule(UQ_DataModule):
 # NOTE: if you want to juggle between pytorch v2.0 and v<2.0 (e.g. for legacy or A100 GPUs) then you just need to juggle between pytorch_distributed_cuda3 (for legacy) and pytorch_distributed (for A100s)
 class MyLightningCLI(pl.cli.LightningCLI):
     def add_arguments_to_parser(self, parser):
-        parser.set_defaults({'trainer.num_nodes': 1, 'trainer.devices': 1}) # we want lr_coef to work properly!
+        parser.set_defaults({'trainer.num_nodes': 1, 'trainer.devices': 1, # we want lr_coef to work properly! 
+        'trainer.gradient_clip_algorithm': 'value', 'trainer.gradient_clip_val': 0.5}) # turn on grad clipping comparable to Ada-Sum (4 parallel)
         parser.link_arguments(['trainer.devices', 'trainer.num_nodes'], 'model.lr_coef', apply_on='parse', compute_fn=lambda devices, num_nodes: int(num_nodes)*int(devices))
         parser.link_arguments(['data.dataset'], 'model.input_size', compute_fn=lambda dataset: next(iter(dataset))[0].shape[0], apply_on='instantiate') # holyshit this works!
         parser.link_arguments(['data.dataset'], 'model.output_size', compute_fn=lambda dataset: next(iter(dataset))[1].shape[0], apply_on='instantiate')

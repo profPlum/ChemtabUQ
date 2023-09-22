@@ -15,13 +15,13 @@ echo num nodes: $num_nodes
 
 # let the user know if their EXTRA_PL_ARGS went through or not
 [ -z "$EXTRA_PL_ARGS" ] && echo EXTRA_PL_ARGS is empty!! >&2
+# NOTE: EXTRA_PL_ARGS should be an environment variable given by the user when submitting sbatch!!
 
-# clear previous variables (NOT an input env variable)
-#diagnostic_CLI_args="--trainer.logger True" # --trainer.logger.save_dir=$SLURM_JOB_NAME"
 diagnostic_CLI_args="--trainer.logger=pytorch_lightning.loggers.TensorBoardLogger --trainer.logger.save_dir=. --trainer.logger.name=$SLURM_JOB_NAME --trainer.logger.version=$SLURM_JOB_ID" #--trainer.logger.save_dir=ChemtabUQ_TBlogs"
-diagnostic_CLI_args="$diagnostic_CLI_args --trainer.profiler simple --model.device_stats_monitor True --trainer.track_grad_norm 2"
-EXTRA_PL_ARGS1="$EXTRA_PL_ARGS $PL_MAX_EPOCHS $diagnostic_CLI_args" # NOTE: EXTRA_PL_ARGS should be an environment variable given by the user when submitting sbatch!!
-lightning_CLI_args="$EXTRA_PL_ARGS1 --trainer.num_nodes=$num_nodes --trainer.devices=2 --trainer.accelerator=gpu --trainer.strategy=ddp --trainer.gradient_clip_algorithm=value" # --trainer.gradient_clip_val 0.25"
+diagnostic_CLI_args="$diagnostic_CLI_args --trainer.profiler simple --trainer.callbacks pytorch_lightning.callbacks.DeviceStatsMonitor --trainer.track_grad_norm 2"
+lightning_CLI_args="$EXTRA_PL_ARGS $diagnostic_CLI_args --trainer.num_nodes=$num_nodes --trainer.devices=2 --trainer.accelerator=gpu --trainer.strategy=ddp"
+
+# IMPORTANT: gradient_clip defaults set to --trainer.gradient_clip_algorithm=value --trainer.gradient_clip_val=0.5 (inside ChemtabUQ.py)
 # NOTE: gradient_clip_value=0.5 recommended by PL docs
 # NOTE: --max_epochs -1 --> means no max epochs (i.e. fit for entire allocation time)
 
