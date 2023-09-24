@@ -14,10 +14,10 @@
 #SBATCH --gpus-per-node=2       # We need to request it "per-node" because pytorch needs visibility of all node's GPUs for some reason...
 #SBATCH --mem=50G
 #SBATCH --nodes=2 # This needs to match Trainer(nodes=...)
-## #SBATCH --time=00:30:00 # TODO: add more time?
+#SBATCH --time=00:30:00 # TODO: add more time?
 
 ## #SBATCH --signal=SIGUSR1@90
 
-PL_MAX_EPOCHS='--trainer.max_epochs 500'
+EXTRA_PL_ARGS="$EXTRA_PL_ARGS --trainer.max_epochs 500"
 
 . chemtab_UQ_job_stub.sh

@@ -4,6 +4,7 @@
 # Example USAGE: EXTRA_PL_ARGS='--data.data_fn=../data/chrest_contiguous_group_sample100k.csv --data.batch_size 4500 --trainer.fast_dev_run True' ./chemtab_UQ-debug.slurm
 # HINT, try this: python ChemtabUQ.py fit --data.help MeanRegressorDataModule !! Gives you great overview of possible CLI args to the data module class for training more general Chemtab mean models
 
+# actual GPU detection done below!
 srun nvidia-smi
 
 # --nodes cannot be set dynamically!! (in sheebang)
@@ -48,11 +49,20 @@ echo diagnostic_CLI_args: $diagnostic_CLI_args
 echo EXTRA_PL_ARGS: $EXTRA_PL_ARGS
 echo lightning_CLI_args: $lightning_CLI_args
 
-#Let's start some work
+# setup env based on GPUs allocated
+GPU_info=$(srun nvidia-smi)
+if [[ $GPU_info =~ .*(V100|P100).* ]] && echo T
+
+# setup env based on GPUs allocated
 source /user/dwyerdei/.bash_profile
-conda activate pytorch_distributed_cuda3
-# IMPORTANT: pytorch_distributed_cuda3 is the "stable version" with pytorch-lightning==1.9.0 and regular CLI stuff working
-# pytorch_distributed_cuda is a possible "newer version" which is capable of using the A100 GPUs
+# IMPORTANT: pytorch_distributed_cuda3 is the "stable version" with pytorch-lightning==1.9.0 for V100s,
+# pytorch_distributed_cuda is a possible "newer version" which is capable of using the A100+ GPUs
+GPU_info=$(srun nvidia-smi)
+if [[ $GPU_info =~ .*(V100|P100).* ]]; then 
+    conda activate pytorch_distributed_cuda3
+else # ^ verified to work on P100 debug node, 9/24/23
+    conda activate pytorch_distributed_cuda
+fi
 
 cd CT_logs_Mu
 srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule $lightning_CLI_args #--trainer.default_root_dir=CT_logs_Mu
