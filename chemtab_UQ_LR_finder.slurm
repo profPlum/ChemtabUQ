@@ -7,15 +7,15 @@
 #SBATCH --cluster=ub-hpc
 #SBATCH --threads-per-core=1  # do not use hyperthreads (i.e. CPUs = physical cores below)
 #SBATCH --cpus-per-task=5     # number of CPUs per process (we want extra for data loaders)
-#SBATCH --gpus-per-node=2     # We need to request it "per-node" because pytorch needs visibility of all node's GPUs for some reason...
+#SBATCH --gpus-per-node=1     # We need to request it "per-node" because pytorch needs visibility of all node's GPUs for some reason...
 #SBATCH --constraint="V100"   # V100s are best supported and A100s would be overkill for 1d
-#SBATCH --ntasks-per-node=2   # This needs to match Trainer(devices=...), Also: it seems that GPU nodes have only 2 GPUs per node anyways...
+#SBATCH --ntasks-per-node=1   # This needs to match Trainer(devices=...), Also: it seems that GPU nodes have only 2 GPUs per node anyways...
 #SBATCH --mem=25G
 #SBATCH --nodes=1 # This needs to match Trainer(nodes=...)
 #SBATCH --partition=general-compute
 #SBATCH --qos=general-compute
-#SBATCH --time=06:00:00 # TODO: add more time?
-#SBATCH --job-name="SousCPV" # sort by information entropy, e.g. CT tells us nothing, MAPE or Big tells us a lot
+#SBATCH --time=01:00:00 # TODO: add more time?
+#SBATCH --job-name="LR_finder_off" # sort by information entropy, e.g. CT tells us nothing, MAPE or Big tells us a lot
 
 # #SBATCH --constraint="V100"
 # #SBATCH --constraint="A100"
@@ -37,15 +37,7 @@ LOSS= #'--model.MAPE_loss True'
 RESUME=F # Tell job stub to load last ckpts from this experiment
 #####################################################
 
-# IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
-# IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script!
-EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True --data.group_key=null --trainer.benchmark=True"
-
-# NOTE: LR finder found: --model.learning_rate 0.0001445439770745928 (big batch=200k)
-# NOTE: LR finder found: --model.learning_rate 0.0001 (big batch=100k)
-# NOTE: LR finder found: --model.learning_rate 4.786300923226383e-07 (batch=20000)
-TRAIN_CFG="--trainer.max_epochs -1 $LOSS --model.SELU True --model.hidden_size=2000 --data.batch_size=10002 --lr_scheduler pytorch_lightning.cli.ReduceLROnPlateau --lr_scheduler.monitor=epoch --model.learning_rate 0.0001 --trainer.gradient_clip_val 0.25"
-MEAN_ONLY=T # Turn off UQ for now
-
-EXTRA_PL_ARGS="$EXTRA_PL_ARGS $TRAIN_CFG" #--ckpt_path=last" # last isn't supported, it appears it doesn't work 
-. chemtab_UQ_job_stub.sh
+conda activate pytorch_distributed_cuda3 
+for i in {1..100}; do
+    srun -n 1 python ChemtabUQ.py tune --data.class_path=MeanRegressorDataModule --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True --trainer.accelerator=gpu --trainer.auto_lr_find True --data.batch_size=100000 --lr_scheduler pytorch_lightning.cli.ReduceLROnPlateau --lr_scheduler.monitor=epoch --data.group_key=null
+done
