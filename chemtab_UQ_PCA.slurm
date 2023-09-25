@@ -8,21 +8,18 @@
 #SBATCH --threads-per-core=1  # do not use hyperthreads (i.e. CPUs = physical cores below)
 #SBATCH --cpus-per-task=5     # number of CPUs per process (we want extra for data loaders)
 #SBATCH --gpus-per-node=2     # We need to request it "per-node" because pytorch needs visibility of all node's GPUs for some reason...
+#SBATCH --constraint="V100"   # V100s are best supported and A100s would be overkill for 1d
 #SBATCH --ntasks-per-node=2   # This needs to match Trainer(devices=...), Also: it seems that GPU nodes have only 2 GPUs per node anyways...
-#SBATCH --mem=50G
+#SBATCH --mem=25G
 #SBATCH --nodes=1 # This needs to match Trainer(nodes=...)
 #SBATCH --partition=general-compute
 #SBATCH --qos=general-compute
 #SBATCH --time=06:00:00 # TODO: add more time?
-#SBATCH --job-name="MAPE-SousCPV" # sort by information entropy, e.g. CT tells us nothing, MAPE or Big tells us a lot
+#SBATCH --job-name="SousCPV" # sort by information entropy, e.g. CT tells us nothing, MAPE or Big tells us a lot
 
-# #SBATCH --partition=debug
-# #SBATCH --qos=debug
-# #SBATCH --nodes=1 # This needs to match Trainer(nodes=...)
-# #SBATCH --time=00:05:00 # TODO: add more time?
-# #SBATCH --job-name="Debug-PCA-CT" # sort by information entropy, e.g. CT tells us nothing, MAPE or Big tells us a lot
-
-# #SBATCH --gres=gpu:V100:2    # A100's require version of PL > v1.9.0 (e.g. pytorch_distributed_cuda3) 
+# #SBATCH --constraint="V100"
+# #SBATCH --constraint="A100"
+# #SBATCH --gpus-per-node=2     # We need to request it "per-node" because pytorch needs visibility of all node's GPUs for some reason...
 # #SBATCH --signal=SIGUSR1@90
 
 ## example command to tune lr & batch size 
@@ -36,7 +33,7 @@ INPUTS=mass_CPV
 #OUTPUTS=Yi
 OUTPUTS=source_CPV
 #OUTPUTS=souener
-LOSS='--model.MAPE_loss True'
+LOSS= #'--model.MAPE_loss True'
 RESUME=F # Tell job stub to load last ckpts from this experiment
 #####################################################
 
@@ -45,9 +42,9 @@ RESUME=F # Tell job stub to load last ckpts from this experiment
 EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True --data.group_key=null --trainer.benchmark=True"
 
 # NOTE: LR finder found: --model.learning_rate 0.0001445439770745928 (big batch=200k)
-# NOTE: LR finder found: --model.learning_rate 7.585775750291837e-08 (big batch=100k) <-- anomoly!
+# NOTE: LR finder found: --model.learning_rate 0.0001 (big batch=100k)
 # NOTE: LR finder found: --model.learning_rate 4.786300923226383e-07 (batch=20000)
-TRAIN_CFG="--trainer.max_epochs -1 $LOSS --model.SELU True --model.hidden_size=2000 --data.batch_size=10000 --lr_scheduler pytorch_lightning.cli.ReduceLROnPlateau --lr_scheduler.monitor=epoch --model.learning_rate 0.0001" # --trainer.gradient_clip_val 0.25"
+TRAIN_CFG="--trainer.max_epochs -1 $LOSS --model.SELU True --model.hidden_size=2000 --data.batch_size=10002 --lr_scheduler pytorch_lightning.cli.ReduceLROnPlateau --lr_scheduler.monitor=epoch --model.learning_rate 0.0001 --trainer.gradient_clip_val 0.25"
 MEAN_ONLY=T # Turn off UQ for now
 
 EXTRA_PL_ARGS="$EXTRA_PL_ARGS $TRAIN_CFG" #--ckpt_path=last" # last isn't supported, it appears it doesn't work 

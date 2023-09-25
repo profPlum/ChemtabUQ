@@ -143,7 +143,6 @@ class FFRegressor(pl.LightningModule):
         :param lr_coef: the learning_rate scaling coefficient (i.e. from larger batch size across gpus)
         :param MAPE_loss: (experimental) use MAPE as loss function
         :param SELU: uses SELU activation & initialization for normalized acivations (better than batch norm)
-        :param device_stats_monitor: whether to use a device monitor (i.e. log device usage)
         :param patience: early stopping patience (on val loss), default is None (no early stopping). NOTE: PL has default patience as 3 (when ES is enabled).
         """
         super().__init__()
@@ -184,7 +183,7 @@ class FFRegressor(pl.LightningModule):
     # Track grad norm, instructions from here: 
     # https://github.com/Lightning-AI/lightning/pull/16745
     def on_before_optimizer_step(self, optimizer, *args):
-        self.log_dict(grad_norm(self, norm_type=2)) # inspect (unscaled) gradients here
+        self.log_dict(grad_norm(self, norm_type='inf')) # inspect (unscaled) gradients here
 
     # sync dist makes metrics more accurate (by syncing across devices), but slows down training
     def log_metrics(self, Y_pred, Y, val_metrics=False, sync_dist=True):
@@ -226,25 +225,34 @@ class UQ_DataModule(pl.LightningDataModule):
         :param batch_size: the batch size for training & validation (default set by auto_batch_size_finder)
         """
         super().__init__()
-        self.save_hyperparameters(ignore=['dataset']) # I think this works?? Also it should work with kwd_args but slightly less 'perfectly'
-        # TODO: check that it actually cooperates with the same thing in pl.LightningModule?? hopefully they can both save their hyper-params simulatneously!
+        self.save_hyperparameters(ignore=['dataset'])
 
         vars(self).update(locals()); del self.self # gotcha to make trick work
         self.prepare_data_per_node=False
     
     def setup(self, stage=None):
         def make_data_loaders(dataset, batch_size, train_portion=0.8, data_workers=4, **kwd_args):
-            # TODO: revert to simpler method of providing portions (should work I think)
-            def _get_split_sizes(full_dataset: Dataset, train_portion) -> tuple:
+            def _get_split_sizes(full_dataset: Dataset, train_portion: int, batch_size: int):
                 len_full = len(full_dataset)
                 len_train = int(train_portion*len_full)
+                if len_train%batch_size >= len_train//5:
+                    raise RuntimeError(f'0<<train_len%batch_size={len_train}%{batch_size}={len_train%batch_size}')
+                len_train -= len_train%batch_size
+                assert len_train%batch_size==0
+                print(f'adjusted train_portion={train_portion} --> {len_train/len_full}')
+                # adjust it to use train_ds size which is divisible by batch_size
+                
                 len_val = len_full - len_train
                 return len_train, len_val
-            train, val = random_split(dataset, _get_split_sizes(dataset, train_portion))#[train_portion, 1-train_portion])
+            train, val = random_split(dataset, _get_split_sizes(dataset, train_portion, batch_size))
+            #[train_portion, 1-train_portion])
+            
             get_batch_size = lambda df: len(df) if batch_size is None else min(batch_size, len(df)) # min ensures we don't choose invalid values!
             train_loader = DataLoader(train, batch_size=get_batch_size(train), num_workers=data_workers, shuffle=True)
-            val_loader = DataLoader(val, batch_size=get_batch_size(val), num_workers=data_workers)
+            val_loader = DataLoader(val, batch_size=len(val), num_workers=data_workers)
+            
             return train_loader, val_loader
+        
         self.train_loader, self.val_loader = make_data_loaders(**vars(self))
     
     def train_dataloader(self) -> TRAIN_DATALOADERS:
@@ -271,7 +279,6 @@ def load_mean_regressor_factory(model_fn, cols):
     if model_fn.endswith('.ckpt'):
         model = FFRegressor.load_from_checkpoint(model_fn, input_size=len(cols))#.to('cuda')
     else:
-        assert False # why?
         import TF2PL_chemtab_wrapper
         model = TF2PL_chemtab_wrapper.wrap_mean_regressor(model_fn)
         TF2PL_chemtab_wrapper.check_Yi_consistency(cols)

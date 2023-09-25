@@ -50,17 +50,16 @@ echo EXTRA_PL_ARGS: $EXTRA_PL_ARGS
 echo lightning_CLI_args: $lightning_CLI_args
 
 # setup env based on GPUs allocated
-GPU_info=$(srun nvidia-smi)
-if [[ $GPU_info =~ .*(V100|P100).* ]] && echo T
-
-# setup env based on GPUs allocated
 source /user/dwyerdei/.bash_profile
+conda deactivate
 # IMPORTANT: pytorch_distributed_cuda3 is the "stable version" with pytorch-lightning==1.9.0 for V100s,
 # pytorch_distributed_cuda is a possible "newer version" which is capable of using the A100+ GPUs
 GPU_info=$(srun nvidia-smi)
 if [[ $GPU_info =~ .*(V100|P100).* ]]; then 
+    echo legacy GPUs detected! activating: pytorch_distributed_cuda3
     conda activate pytorch_distributed_cuda3
 else # ^ verified to work on P100 debug node, 9/24/23
+    echo modern GPUs detected! activating: pytorch_distributed_cuda
     conda activate pytorch_distributed_cuda
 fi
 
