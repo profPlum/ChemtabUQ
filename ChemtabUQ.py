@@ -119,7 +119,7 @@ class UQErrorPredictionDataset(Dataset):
             # accumulate SSE, NOTE: VAR(X+Y)=VAR(X)+VAR(Y) | X indep Y
     
         self.SE_model /= samples_per_distribution # derive MSE
-        self.SE_model = self.SE_model**(1/2)
+        self.SE_model = self.SE_model**(1/2) # MSE --> Standard Error
 
     def __len__(self):
         return len(self.moments_dataset)
@@ -230,7 +230,7 @@ class UQ_DataModule(pl.LightningDataModule):
         vars(self).update(locals()); del self.self # gotcha to make trick work
         self.prepare_data_per_node=False
     
-    def setup(self, stage=None):
+    def setup(self, stage=None): # complicated version
         def make_data_loaders(dataset, batch_size, train_portion=0.8, data_workers=4, **kwd_args):
             def _get_split_sizes(full_dataset: Dataset, train_portion: int, batch_size: int):
                 len_full = len(full_dataset)
@@ -244,8 +244,10 @@ class UQ_DataModule(pl.LightningDataModule):
                 
                 len_val = len_full - len_train
                 return len_train, len_val
-            train, val = random_split(dataset, _get_split_sizes(dataset, train_portion, batch_size))
-            #[train_portion, 1-train_portion])
+            #len_train, len_val = _get_split_sizes(dataset, train_portion, batch_size)
+            #train, val = dataset[:len_train], dataset[len_train:]
+            fixed_split_seed = torch.Generator().manual_seed(42) # IMPORTANT: must be fixed so that this works across processes
+            train, val = random_split(dataset, _get_split_sizes(dataset, train_portion, batch_size), generator=fixed_split_seed)
             
             get_batch_size = lambda df: len(df) if batch_size is None else min(batch_size, len(df)) # min ensures we don't choose invalid values!
             train_loader = DataLoader(train, batch_size=get_batch_size(train), num_workers=data_workers, shuffle=True, drop_last=True)
@@ -254,7 +256,18 @@ class UQ_DataModule(pl.LightningDataModule):
             return train_loader, val_loader
         
         self.train_loader, self.val_loader = make_data_loaders(**vars(self))
-    
+   
+    # TODO: test me!
+    """
+    def setup(self, stage=None): # simple version 
+        fixed_split_seed = torch.Generator().manual_seed(42) # IMPORTANT: must be fixed so that this works across processes
+        train, val = random_split(self.dataset, [self.train_portion, 1-self.train_portion], generator=fixed_split_seed)
+
+        # IMPORTANT: drop_last is needed b/c it prevents unstable training at large batch sizes (e.g. batch_size=100k w/ trunc batch size 40)
+        self.train_loader = DataLoader(train, batch_size=self.batch_size, num_workers=self.data_workers, shuffle=True, drop_last=True)
+        self.val_loader = DataLoader(val, batch_size=min(self.batch_size, len(val)), num_workers=self.data_workers)
+    """
+
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return self.train_loader
     
