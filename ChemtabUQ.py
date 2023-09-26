@@ -248,7 +248,7 @@ class UQ_DataModule(pl.LightningDataModule):
             #[train_portion, 1-train_portion])
             
             get_batch_size = lambda df: len(df) if batch_size is None else min(batch_size, len(df)) # min ensures we don't choose invalid values!
-            train_loader = DataLoader(train, batch_size=get_batch_size(train), num_workers=data_workers, shuffle=True)
+            train_loader = DataLoader(train, batch_size=get_batch_size(train), num_workers=data_workers, shuffle=True, drop_last=True)
             val_loader = DataLoader(val, batch_size=len(val), num_workers=data_workers)
             
             return train_loader, val_loader
