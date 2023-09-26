@@ -70,7 +70,7 @@ export_CPVs_and_rotation = function(variance_weighted=T) {
   # It flips the sign of the zmix weights & normalizes them, we flip sign back but keep it normalized
   Q_rot = Q_rot*cor(Q_rot[,1], rotation[,1]) # this correlation should be either 1 or -1 & indicates a sign flip
   stopifnot(all.equal(Q_rot[,1], rotation[,1]/norm(as.matrix(rotation[,1]), type='2')))
-  # confirm that first CPV is still (porportional to) Zmix
+  # confirm that first CPV is still (proportional to) Zmix
 
   # IMPORTANT: It's OK that zmix is correlated with CPVs!!
   # correlation!=W_matrix orthogonality (cor depends on mass_frac data)
@@ -89,7 +89,7 @@ export_CPVs_and_rotation = function(variance_weighted=T) {
   CPV_sources = as.matrix(souspec_data)%*%Q_rot %>% as_tibble()
   colnames(CPV_sources) = colnames(CPV_sources) %>% paste0('source_', .)
 
-  Chemtab_data = cbind(Chemtab_data, mass_PCs, CPV_sources)
+  Chemtab_data = cbind(Chemtab_data, mass_PCs, CPV_sources) %>% as_tibble %>% slice_sample(prop=1)
   write.csv(Chemtab_data, file=paste0('TChem+CPVs', ifelse(variance_weighted, '_MassR2', ''),'.csv.gz'))
 
   ###############################################################################################
