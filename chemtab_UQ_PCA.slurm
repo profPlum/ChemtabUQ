@@ -15,7 +15,7 @@
 #SBATCH --partition=general-compute
 #SBATCH --qos=general-compute
 #SBATCH --time=06:00:00 # TODO: add more time?
-#SBATCH --job-name="Best-Souener" # sort by information entropy, e.g. CT tells us nothing, MAPE or Big tells us a lot
+#SBATCH --job-name="Best-SousCPV" # sort by information entropy, e.g. CT tells us nothing, MAPE or Big tells us a lot
 
 # #SBATCH --constraint="V100"
 # #SBATCH --constraint="A100"
@@ -31,8 +31,8 @@
 #####################################################
 INPUTS=mass_CPV
 #OUTPUTS=Yi
-#OUTPUTS=source_CPV
-OUTPUTS=souener
+OUTPUTS=source_CPV
+#OUTPUTS=souener
 #LOSS='--model.MAPE_loss True'
 RESUME=F # Tell job stub to load last ckpts from this experiment
 #####################################################
@@ -42,7 +42,8 @@ RESUME=F # Tell job stub to load last ckpts from this experiment
 EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True --data.group_key=null --trainer.benchmark=True"
 
 # NOTE: LR finder found: --model.learning_rate 0.0001445439770745928 (big batch=200k)
-# NOTE: LR finder found: --model.learning_rate 5.608e-06 (big batch=100k, averaged over 20+ trials)
+# NOTE: LR finder found: --model.learning_rate 5.608e-06 (big batch=100k, median over 20+ trials)
+# NOTE: LR finder found: --model.learning_rate 0.0002596525 (big batch=100k, mean over 20+ trials)
 # NOTE: LR finder found: --model.learning_rate 4.786300923226383e-07 (batch=20000)
 TRAIN_CFG="--trainer.max_epochs -1 $LOSS --model.SELU True --model.hidden_size=500 --data.batch_size=10000 --lr_scheduler pytorch_lightning.cli.ReduceLROnPlateau --lr_scheduler.monitor=epoch --model.learning_rate 0.00014454 --trainer.gradient_clip_val 0.25"
 MEAN_ONLY=T # Turn off UQ for now
