@@ -246,7 +246,7 @@ class UQ_DataModule(pl.LightningDataModule):
                 return len_train, len_val
             #len_train, len_val = _get_split_sizes(dataset, train_portion, batch_size)
             #train, val = dataset[:len_train], dataset[len_train:]
-            fixed_split_seed = torch.Generator().manual_seed(42) # IMPORTANT: must be fixed so that this works across processes
+            fixed_split_seed = th.Generator().manual_seed(42) # IMPORTANT: must be fixed so that this works across processes
             train, val = random_split(dataset, _get_split_sizes(dataset, train_portion, batch_size), generator=fixed_split_seed)
             
             get_batch_size = lambda df: len(df) if batch_size is None else min(batch_size, len(df)) # min ensures we don't choose invalid values!
@@ -260,7 +260,7 @@ class UQ_DataModule(pl.LightningDataModule):
     # TODO: test me!
     """
     def setup(self, stage=None): # simple version 
-        fixed_split_seed = torch.Generator().manual_seed(42) # IMPORTANT: must be fixed so that this works across processes
+        fixed_split_seed = th.Generator().manual_seed(42) # IMPORTANT: must be fixed so that this works across processes
         train, val = random_split(self.dataset, [self.train_portion, 1-self.train_portion], generator=fixed_split_seed)
 
         # IMPORTANT: drop_last is needed b/c it prevents unstable training at large batch sizes (e.g. batch_size=100k w/ trunc batch size 40)
