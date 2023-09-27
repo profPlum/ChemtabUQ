@@ -19,7 +19,7 @@ echo num nodes: $num_nodes
 # NOTE: EXTRA_PL_ARGS should be an environment variable given by the user when submitting sbatch!!
 
 diagnostic_CLI_args="--trainer.logger=pytorch_lightning.loggers.TensorBoardLogger --trainer.logger.save_dir=. --trainer.logger.name=$SLURM_JOB_NAME --trainer.logger.version=$SLURM_JOB_ID" #--trainer.logger.save_dir=ChemtabUQ_TBlogs"
-diagnostic_CLI_args="$diagnostic_CLI_args --trainer.profiler simple  --trainer.callbacks pytorch_lightning.callbacks.DeviceStatsMonitor --trainer.callbacks pytorch_lightning.callbacks.LearningRateMonitor" #--trainer.track_grad_norm 2"
+diagnostic_CLI_args="$diagnostic_CLI_args --trainer.profiler simple --trainer.callbacks+=pytorch_lightning.callbacks.LearningRateMonitor --trainer.callbacks.logging_interval=epoch --trainer.callbacks+=pytorch_lightning.callbacks.DeviceStatsMonitor" #--trainer.track_grad_norm 2" 
 lightning_CLI_args="$EXTRA_PL_ARGS $diagnostic_CLI_args --trainer.num_nodes=$num_nodes --trainer.devices=2 --trainer.accelerator=gpu --trainer.strategy=ddp"
 
 # IMPORTANT: gradient_clip defaults set to --trainer.gradient_clip_algorithm=value --trainer.gradient_clip_val=0.5 (inside ChemtabUQ.py)

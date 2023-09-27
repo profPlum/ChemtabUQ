@@ -143,10 +143,9 @@ class FFRegressor(pl.LightningModule):
         :param lr_coef: the learning_rate scaling coefficient (i.e. from larger batch size across gpus)
         :param MAPE_loss: (experimental) use MAPE as loss function
         :param SELU: uses SELU activation & initialization for normalized acivations (better than batch norm)
-        :param patience: early stopping patience (on val loss), default is None (no early stopping). NOTE: PL has default patience as 3 (when ES is enabled).
         """
         super().__init__()
-        self.save_hyperparameters(ignore=['input_size', 'output_size']) # save hyper-params to TB logs for better analysis later! 
+        self.save_hyperparameters() # save hyper-params to TB logs for better analysis later! 
 
         learning_rate *= lr_coef; del lr_coef
         if not output_size: output_size = input_size
