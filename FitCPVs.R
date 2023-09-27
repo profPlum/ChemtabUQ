@@ -92,7 +92,7 @@ export_CPVs_and_rotation = function(variance_weighted=T) {
   colnames(CPV_sources) = colnames(CPV_sources) %>% paste0('source_', .)
 
   Chemtab_data = cbind(Chemtab_data, mass_PCs, CPV_sources) %>% as_tibble %>% slice_sample(prop=1)
-  write.csv(Chemtab_data, file=paste0('TChem+CPVs', ifelse(variance_weighted, '_MassR2', ''),'.csv.gz'))
+  write.csv(Chemtab_data, file=paste0('TChem+CPVs+Zmix', ifelse(variance_weighted, '_MassR2', ''),'.csv.gz'))
 
   ###############################################################################################
 }
