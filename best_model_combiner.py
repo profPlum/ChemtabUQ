@@ -21,7 +21,7 @@ def inspect_outputs(outputs, model_name: str):
 
 # verified to work! 9/20/23
 def make_aggregate_regressor(CPV_source_ckpt: str, souener_ckpt: str, inv_ckpt: str):
-    """ makes aggergate regressor with the same interfaces as CT V1 from individual models given from CT V2"""
+    """ makes aggregate regressor with the same interfaces as CT V1 from individual models given from CT V2"""
     print('CPV_source checkpoint: ', CPV_source_ckpt)
     print('Inv checkpoint: ', inv_ckpt)
     print('Energy_source checkpoints', souener_ckpt)
@@ -45,13 +45,13 @@ def make_aggregate_regressor(CPV_source_ckpt: str, souener_ckpt: str, inv_ckpt: 
     static_source_prediction = L.Concatenate(name='static_source_prediction')([Souener_model(input_), Inv_model(input_)])
     
     outputs={'static_source_prediction': static_source_prediction, 'dynamic_source_prediction': dynamic_source_prediction}
-    aggergate_regressor = keras.models.Model(inputs=input_, outputs=outputs, name='V2_aggergate_regressor')
+    aggregate_regressor = keras.models.Model(inputs=input_, outputs=outputs, name='V2_aggregate_regressor')
     print('aggregate regressor summary: ')
-    aggergate_regressor.summary()
-    print('aggregate regressor input_shape: ', aggergate_regressor.input_shape)
-    print('aggregate regressor output_shape: ', aggergate_regressor.output_shape)
-    tf.keras.utils.plot_model(aggergate_regressor, to_file='aggregate_regressor.png', show_shapes=True, show_dtype=True)
-    return aggergate_regressor
+    aggregate_regressor.summary()
+    print('aggregate regressor input_shape: ', aggregate_regressor.input_shape)
+    print('aggregate regressor output_shape: ', aggregate_regressor.output_shape)
+    tf.keras.utils.plot_model(aggregate_regressor, to_file='aggregate_regressor.png', show_shapes=True, show_dtype=True)
+    return aggregate_regressor
 
 # default checkpoint is the test case
 if __name__=='__main__':
@@ -60,7 +60,7 @@ if __name__=='__main__':
     print('all candidate checkpoints: ')
     print(candidate_ckpts)
 
-    parser = argparse.ArgumentParser(description='packages/aggergates V2 CT models for ablate')
+    parser = argparse.ArgumentParser(description='packages/aggregates V2 CT models for ablate')
     parser.add_argument('--CPV_source_path', type=str, required=True, help='path to checkpoint of V2 CPV_source model')
     parser.add_argument('--Souener_path', type=str, required=True, help='path to checkpoint of V2 Souener model')
     parser.add_argument('--Inverse_path', type=str, required=True, help='path to checkpoint of V2 Inverse model')
@@ -72,9 +72,9 @@ if __name__=='__main__':
     os.system('rm -r PCDNNV2_decomp') 
     # done without reference to out_dir as a sanity check on adapt_test_targets
 
-    aggergate_regressor = make_aggregate_regressor(args.CPV_source_path, args.Souener_path, args.Inverse_path)
+    aggregate_regressor = make_aggregate_regressor(args.CPV_source_path, args.Souener_path, args.Inverse_path)
     os.system(f'mkdir -p {out_dir}/experiment_records') # for config.yaml files
-    aggergate_regressor.save(f'{out_dir}/regressor')
+    aggregate_regressor.save(f'{out_dir}/regressor')
  
     config_path = lambda ckpt_path: os.path.dirname(ckpt_path) + '/../config.yaml'
     os.system(f'cp {config_path(args.CPV_source_path)} {out_dir}/experiment_records/CPV_source_config.yaml')
