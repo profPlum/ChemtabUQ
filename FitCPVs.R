@@ -28,12 +28,14 @@ if (is.na(n_PCs)) n_PCs = 25 # default is 25 (1-to-1)
 cat('n_CPVs: ', n_PCs, '(change via N_CPVS env var)\n')
 
 #Chemtab_fn = '~/Downloads/TChem_collated.csv.gz'
+#Chemtab_fn = '~/Downloads/Data/wax_master.csv'
 Chemtab_fn = commandArgs(trailingOnly = T)[[1]]
 cat('Chemtab_fn: ', Chemtab_fn, '\n')
 cat('CDing to data directory.\n') # AFTER loading csv...
 Sys.sleep(1)
 
-Chemtab_data = read_csv(Chemtab_fn) #%>% 
+Chemtab_data = read_csv(Chemtab_fn) %>% mutate(souspecAR=0)
+if ('Zmix' %in% colnames(Chemtab_data)) Chemtab_data = Chemtab_data %>% rename(zmix=Zmix)
 mass_frac_data = Chemtab_data %>% select(starts_with('Yi'))
 souspec_data = Chemtab_data %>% select(starts_with('souspec'))
 
@@ -58,8 +60,8 @@ export_CPVs_and_rotation = function(variance_weighted=T) {
   stopifnot(all.equal(as.matrix(mass_frac_data)%*%rotation, mass_PCA$x))
   stopifnot(names(coef(zmix_lm)[-1])==rownames(rotation))
   rownames(rotation) = colnames(mass_frac_data)
-  colnames(rotation) = paste0('CPV_', 1:n_PCs-1) # colnames should match exactly the format from V1
-  rotation = cbind(zmix=coef(zmix_lm)[-1], rotation) # colnames should match exactly the format from V1
+  colnames(rotation) = paste0('CPV_PC_', 1:n_PCs-1) # colnames renamed from V1 for clarity & for matching with 'like' in pandas
+  rotation = cbind(CPV_zmix=coef(zmix_lm)[-1], rotation) # ^ I've confirmed that ablate code doesn't rely on column names anyways...
   #View(rotation[1:5, 1:5])
 
   # NOTE: apparently using linear models here has a noticable decrease on R2 (though slight), so we'll avoid it
@@ -70,14 +72,14 @@ export_CPVs_and_rotation = function(variance_weighted=T) {
   # It flips the sign of the zmix weights & normalizes them, we flip sign back but keep it normalized
   Q_rot = Q_rot*cor(Q_rot[,1], rotation[,1]) # this correlation should be either 1 or -1 & indicates a sign flip
   stopifnot(all.equal(Q_rot[,1], rotation[,1]/norm(as.matrix(rotation[,1]), type='2')))
-  # confirm that first CPV is still (proportional to) Zmix
+  # Confirm that first CPV is still (proportional to) Zmix. Also kenny confirmed proportional to is enough.
 
   # IMPORTANT: It's OK that zmix is correlated with CPVs!!
   # correlation!=W_matrix orthogonality (cor depends on mass_frac data)
   mass_PCs = as.matrix(mass_frac_data)%*%Q_rot
   R2 = get_explained_var(mass_PCs, mass_frac_data, var_weighted=variance_weighted)
   cat('mass_PCs --> mass_frac_data, R2: ', R2, '\n')
-  stopifnot(R2>=0.90)
+  stopifnot(R2>=0.95)
   cat('range(mass_PCs): ', range(mass_PCs), '\n')
   Q_rot = Q_rot[sort(rownames(Q_rot)),]
   write.csv(Q_rot, file=paste0('Q_rot', ifelse(variance_weighted, '_MassR2', ''),'.csv.gz'))
