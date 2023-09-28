@@ -31,14 +31,15 @@ def make_aggregate_regressor(CPV_source_ckpt: str, souener_ckpt: str, inv_ckpt: 
     Souener_model = ONNX_export.export_CT_model_for_ablate(souener_ckpt)
     Inv_model = ONNX_export.export_CT_model_for_ablate(inv_ckpt, add_hard_l1_constraint=True)
     # hard_l1_constraint is needed for Inv model only due to constraints on Yis
-    
+   
+    input_shape = CPV_source_model.input_shape[1:]
+    print('input_shape: ', input_shape)
+ 
     assert Souener_model.output_shape[1]==1, 'invalid souener model!'
-    assert CPV_source_model.input_shape==CPV_source_model.output_shape, 'invalid CPV_Source model!'
+    assert CPV_source_model.input_shape[1]==CPV_source_model.output_shape[1]+1, 'invalid CPV_Source model!'
     assert Inv_model.input_shape[1]<Inv_model.output_shape[1], 'invalid inverse model!'
     assert CPV_source_model.input_shape==Souener_model.input_shape==Inv_model.input_shape, 'incompatible models!'
 
-    input_shape = CPV_source_model.input_shape[1:]
-    print('input_shape: ', input_shape)
     input_=L.Input(shape=CPV_source_model.input_shape[1:], name='input_1')
     
     dynamic_source_prediction = L.Rescaling(1.0, name='dynamic_source_prediction')(CPV_source_model(input_))

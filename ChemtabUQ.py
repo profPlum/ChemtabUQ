@@ -14,6 +14,7 @@ import torchmetrics.functional as F_metrics
 from torchmetrics.regression import MeanAbsolutePercentageError
 
 import pytorch_lightning as pl
+import pytorch_lightning.cli
 from pytorch_lightning.cli import LightningCLI, LightningArgumentParser
 from pytorch_lightning.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
 from pytorch_lightning.callbacks import DeviceStatsMonitor, EarlyStopping
@@ -131,7 +132,7 @@ class UQErrorPredictionDataset(Dataset):
 class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
                  n_layers: int=8, learning_rate: float=7.585775750291837e-08, lr_coef: float=1.0, 
-                 MAPE_loss: bool=False, SELU: bool = True):
+                 MAPE_loss: bool=False, SELU: bool = True, reduce_lr_on_plateu_shedule=True):
         """
         Just a simple FF Network that scales
 
@@ -176,8 +177,13 @@ class FFRegressor(pl.LightningModule):
     def forward(self, inputs):
         return self.regressor(inputs)
 
+    # TODO: test moving to CLI?
     def configure_optimizers(self):
-        return th.optim.Adam(self.parameters(), lr=self.learning_rate)#*self.lr_coef)
+        opt = th.optim.Adam(self.parameters(), lr=self.learning_rate)
+        if self.reduce_lr_on_plateu_shedule:
+            lr_scheduler = pl.cli.ReduceLROnPlateau(opt, monitor='loss')
+            return {'optimizer': opt, 'lr_scheduler': lr_scheduler, 'monitor': 'loss'}
+        else: return opt
 
     # Track grad norm, instructions from here: 
     # https://github.com/Lightning-AI/lightning/pull/16745
