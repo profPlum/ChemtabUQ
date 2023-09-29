@@ -15,7 +15,7 @@
 #SBATCH --partition=general-compute
 #SBATCH --qos=general-compute
 #SBATCH --time=01:00:00 # TODO: add more time?
-#SBATCH --job-name="LR_finder_off" # sort by information entropy, e.g. CT tells us nothing, MAPE or Big tells us a lot
+#SBATCH --job-name="LR_finder-MAPE" # sort by information entropy, e.g. CT tells us nothing, MAPE or Big tells us a lot
 
 # #SBATCH --constraint="V100"
 # #SBATCH --constraint="A100"
@@ -29,15 +29,15 @@
 # These are the settings that when changed make other experiments
 # 'incomparable' & thus requires new experiment name
 #####################################################
-INPUTS=mass_CPV
+INPUTS=mass_CPV # include zmix
 #OUTPUTS=Yi
-OUTPUTS=source_CPV
+OUTPUTS=source_CPV_PC # exclude zmix
 #OUTPUTS=souener
-LOSS= #'--model.MAPE_loss True'
+LOSS='--model.MAPE_loss True'
 RESUME=F # Tell job stub to load last ckpts from this experiment
 #####################################################
 
 conda activate pytorch_distributed_cuda3 
 for i in {1..100}; do
-    srun -n 1 python ChemtabUQ.py tune --data.class_path=MeanRegressorDataModule --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True --trainer.accelerator=gpu --trainer.auto_lr_find True --data.batch_size=100000 --lr_scheduler pytorch_lightning.cli.ReduceLROnPlateau --lr_scheduler.monitor=epoch --data.group_key=null
+    srun -n 1 python ChemtabUQ.py tune --data.class_path=MeanRegressorDataModule --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True --trainer.accelerator=gpu --trainer.auto_lr_find True --data.batch_size=10000 --lr_scheduler pytorch_lightning.cli.ReduceLROnPlateau --lr_scheduler.monitor=epoch --data.group_key=null
 done

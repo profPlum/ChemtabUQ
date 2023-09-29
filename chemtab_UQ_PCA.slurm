@@ -39,13 +39,14 @@ RESUME=F # Tell job stub to load last ckpts from this experiment
 
 # IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script!
-EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True --data.group_key=null --trainer.benchmark=True"
+EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1 $LOSS"
+# this set of args are relatively constant across experiments or they take args specified elsewhere
 
 # NOTE: LR finder found: --model.learning_rate 0.0001445439770745928 (big batch=200k)
 # NOTE: LR finder found: --model.learning_rate 5.608e-06 (big batch=100k, median over 20+ trials)
 # NOTE: LR finder found: --model.learning_rate 0.0002596525 (big batch=100k, mean over 20+ trials)
 # NOTE: LR finder found: --model.learning_rate 4.786300923226383e-07 (batch=20000)
-TRAIN_CFG="--trainer.max_epochs -1 $LOSS --model.SELU True --model.hidden_size=500 --data.batch_size=10000 --lr_scheduler pytorch_lightning.cli.ReduceLROnPlateau --lr_scheduler.monitor=epoch --model.learning_rate 0.00014454 --trainer.gradient_clip_val 0.25"
+TRAIN_CFG="--model.hidden_size=500 --data.batch_size=10000 --model.SELU True --model.hidden_size=500 --model.reduce_lr_on_plateu_shedule=True --model.learning_rate 0.00014454 --trainer.gradient_clip_val 0.25"
 MEAN_ONLY=T # Turn off UQ for now
 
 #IMPORTANT: "best config"

@@ -131,8 +131,8 @@ class UQErrorPredictionDataset(Dataset):
 
 class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
-                 n_layers: int=8, learning_rate: float=7.585775750291837e-08, lr_coef: float=1.0, 
-                 MAPE_loss: bool=False, SELU: bool = True, reduce_lr_on_plateu_shedule=True):
+                 n_layers: int=8, learning_rate: float=7.585775750291837e-06, lr_coef: float=1.0, 
+                 MAPE_loss: bool=False, SELU: bool = True, reduce_lr_on_plateu_shedule=False):
         """
         Just a simple FF Network that scales
 
@@ -177,7 +177,7 @@ class FFRegressor(pl.LightningModule):
     def forward(self, inputs):
         return self.regressor(inputs)
 
-    # TODO: test moving to CLI?
+    # TODO: test moving to CLI? (would require rework on lr_coef...)
     def configure_optimizers(self):
         opt = th.optim.Adam(self.parameters(), lr=self.learning_rate)
         if self.reduce_lr_on_plateu_shedule:
@@ -235,43 +235,45 @@ class UQ_DataModule(pl.LightningDataModule):
         vars(self).update(locals()); del self.self # gotcha to make trick work
         self.prepare_data_per_node=False
     
-    def setup(self, stage=None): # complicated version
-        def make_data_loaders(dataset, batch_size, train_portion=0.8, data_workers=4, **kwd_args):
-            def _get_split_sizes(full_dataset: Dataset, train_portion: int, batch_size: int):
-                len_full = len(full_dataset)
-                len_train = int(train_portion*len_full)
-                if len_train%batch_size >= len_train//5:
-                    raise RuntimeError(f'0<<train_len%batch_size={len_train}%{batch_size}={len_train%batch_size}')
-                len_train -= len_train%batch_size
-                assert len_train%batch_size==0
-                print(f'adjusted train_portion={train_portion} --> {len_train/len_full}')
-                # adjust it to use train_ds size which is divisible by batch_size
-                
-                len_val = len_full - len_train
-                return len_train, len_val
-            #len_train, len_val = _get_split_sizes(dataset, train_portion, batch_size)
-            #train, val = dataset[:len_train], dataset[len_train:]
-            fixed_split_seed = th.Generator().manual_seed(42) # IMPORTANT: must be fixed so that this works across processes
-            train, val = random_split(dataset, _get_split_sizes(dataset, train_portion, batch_size), generator=fixed_split_seed)
-            
-            get_batch_size = lambda df: len(df) if batch_size is None else min(batch_size, len(df)) # min ensures we don't choose invalid values!
-            train_loader = DataLoader(train, batch_size=get_batch_size(train), num_workers=data_workers, shuffle=True, drop_last=True)
-            val_loader = DataLoader(val, batch_size=len(val), num_workers=data_workers)
-            
-            return train_loader, val_loader
-        
-        self.train_loader, self.val_loader = make_data_loaders(**vars(self))
+    #def setup(self, stage=None): # complicated version
+    #    def make_data_loaders(dataset, batch_size, train_portion=0.8, data_workers=4, **kwd_args):
+    #        def _get_split_sizes(full_dataset: Dataset, train_portion: int, batch_size: int):
+    #            len_full = len(full_dataset)
+    #            len_train = int(train_portion*len_full)
+    #            if len_train%batch_size >= len_train//5:
+    #                raise RuntimeError(f'0<<train_len%batch_size={len_train}%{batch_size}={len_train%batch_size}')
+    #            len_train -= len_train%batch_size
+    #            assert len_train%batch_size==0
+    #            print(f'adjusted train_portion={train_portion} --> {len_train/len_full}')
+    #            # adjust it to use train_ds size which is divisible by batch_size
+    #            
+    #            len_val = len_full - len_train
+    #            return len_train, len_val
+    #        #len_train, len_val = _get_split_sizes(dataset, train_portion, batch_size)
+    #        #train, val = dataset[:len_train], dataset[len_train:]
+    #        fixed_split_seed = th.Generator().manual_seed(42) # IMPORTANT: must be fixed so that this works across processes
+    #        train, val = random_split(dataset, _get_split_sizes(dataset, train_portion, batch_size), generator=fixed_split_seed)
+    #        
+    #        get_batch_size = lambda df: len(df) if batch_size is None else min(batch_size, len(df)) # min ensures we don't choose invalid values!
+    #        train_loader = DataLoader(train, batch_size=get_batch_size(train), num_workers=data_workers, shuffle=True, drop_last=True)
+    #        val_loader = DataLoader(val, batch_size=len(val), num_workers=data_workers)
+    #        
+    #        return train_loader, val_loader
+    #    
+    #    self.train_loader, self.val_loader = make_data_loaders(**vars(self))
    
-    # TODO: test me!
-    """
     def setup(self, stage=None): # simple version 
+        assert float('.'.join(th.__version__.split('.')[:2]))>=1.13, 'torch.__version__ must be >= 1.13.0 in order to use random_split portions feature!'        
+
         fixed_split_seed = th.Generator().manual_seed(42) # IMPORTANT: must be fixed so that this works across processes
-        train, val = random_split(self.dataset, [self.train_portion, 1-self.train_portion], generator=fixed_split_seed)
+        train, val = random_split(self.dataset, [self.train_portion, 1-self.train_portion], generator=fixed_split_seed) # requires torch version >= 1.13.0!
+
+        assert len(train) % self.batch_size < len(self.dataset)//10, f'Batch size is too inefficient! It will require dropping {len(train) % self.batch_size} samples.'
 
         # IMPORTANT: drop_last is needed b/c it prevents unstable training at large batch sizes (e.g. batch_size=100k w/ trunc batch size 40)
+        # NOTE: drop last here actually isn't so bad b/c the dataset is shuffled meaning that although an epoch doesn't cover everything, 2 epochs should!!
         self.train_loader = DataLoader(train, batch_size=self.batch_size, num_workers=self.data_workers, shuffle=True, drop_last=True)
         self.val_loader = DataLoader(val, batch_size=min(self.batch_size, len(val)), num_workers=self.data_workers)
-    """
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return self.train_loader

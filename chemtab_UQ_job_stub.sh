@@ -19,7 +19,7 @@ echo num nodes: $num_nodes
 # NOTE: EXTRA_PL_ARGS should be an environment variable given by the user when submitting sbatch!!
 
 diagnostic_CLI_args="--trainer.logger=pytorch_lightning.loggers.TensorBoardLogger --trainer.logger.save_dir=. --trainer.logger.name=$SLURM_JOB_NAME --trainer.logger.version=$SLURM_JOB_ID" #--trainer.logger.save_dir=ChemtabUQ_TBlogs"
-diagnostic_CLI_args="$diagnostic_CLI_args --trainer.profiler simple --trainer.callbacks+=pytorch_lightning.callbacks.LearningRateMonitor --trainer.callbacks.logging_interval=epoch --trainer.callbacks+=pytorch_lightning.callbacks.DeviceStatsMonitor" #--trainer.track_grad_norm 2" 
+diagnostic_CLI_args="$diagnostic_CLI_args --trainer.profiler simple --trainer.callbacks+=pytorch_lightning.callbacks.LearningRateMonitor --trainer.callbacks.logging_interval=epoch --trainer.callbacks+=pytorch_lightning.callbacks.DeviceStatsMonitor --trainer.callbacks+=pytorch_lightning.callbacks.ModelCheckpoint --trainer.callbacks.monitor=val_loss" #--trainer.track_grad_norm 2" 
 lightning_CLI_args="$EXTRA_PL_ARGS $diagnostic_CLI_args --trainer.num_nodes=$num_nodes --trainer.devices=2 --trainer.accelerator=gpu --trainer.strategy=ddp"
 
 # IMPORTANT: gradient_clip defaults set to --trainer.gradient_clip_algorithm=value --trainer.gradient_clip_val=0.5 (inside ChemtabUQ.py)
@@ -65,21 +65,19 @@ fi
 
 cd CT_logs_Mu
 srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule $lightning_CLI_args #--trainer.default_root_dir=CT_logs_Mu
-mkdir mean_regressors
+mkdir mean_regressors 2> /dev/null
 mv model.ckpt mean_regressors/model-${SLURM_JOB_ID}.ckpt
 cd -
-
-echo $(tail -n 1 $SLURM_JOB_NAME/version_$SLURM_JOB_ID/checkpoints/*.ckpt)
 
 if [ $MEAN_ONLY != T ]; then
     cd CT_logs_Sigma
 	# TODO: fix bad mean regressor loading for cases with multiple jobs running at once
     srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=UQRegressorDataModule --data.mean_regressor_fn=~/ChemtabUQ/CT_logs_Mu/mean_regressors/model-${SLURM_JOB_ID}.ckpt $lightning_CLI_args #--trainer.default_root_dir=CT_logs_Sigma 
-	mkdir UQ_regressors
+	mkdir UQ_regressors 2> /dev/null
     mv model.ckpt UQ_regressors/model-${SLURM_JOB_ID}.ckpt
 	cd -
 else
-	rm -r UQ_regressor
+	rm -r UQ_regressor 2> /dev/null
 fi
 
 # Example Commands for training of mean_regressor and UQ model
