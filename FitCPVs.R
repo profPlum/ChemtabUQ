@@ -27,9 +27,9 @@ n_PCs=as.integer(Sys.getenv()['N_CPVS'])
 if (is.na(n_PCs)) n_PCs = 25 # default is 25 (1-to-1)
 cat('n_CPVs: ', n_PCs, '(change via N_CPVS env var)\n')
 
-Chemtab_fn = '~/Downloads/TChem_collated.csv.gz'
+#Chemtab_fn = '~/Downloads/TChem_collated.csv.gz'
 #Chemtab_fn = '~/Downloads/Data/wax_master.csv'
-#Chemtab_fn = commandArgs(trailingOnly = T)[[1]]
+Chemtab_fn = commandArgs(trailingOnly = T)[[1]]
 cat('Chemtab_fn: ', Chemtab_fn, '\n')
 cat('CDing to data directory.\n') # AFTER loading csv...
 Sys.sleep(1)
