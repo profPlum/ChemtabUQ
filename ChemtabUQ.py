@@ -133,7 +133,7 @@ class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
                  n_layers: int=8, learning_rate: float=7.585775750291837e-06, lr_coef: float=1.0, 
                  MAPE_loss: bool=False, SELU: bool = True, reduce_lr_on_plateu_shedule=False,
-                 cosine_annealing_lr_schedule=False):
+                 cosine_annealing_lr_schedule=False, cos_T_0=60, cos_T_mult=1.0):
         """
         Just a simple FF Network that scales
 
@@ -179,7 +179,6 @@ class FFRegressor(pl.LightningModule):
     def forward(self, inputs):
         return self.regressor(inputs)
 
-    # TODO: test moving to CLI? (would require rework on lr_coef...)
     def configure_optimizers(self):
         opt = th.optim.Adam(self.parameters(), lr=self.learning_rate)
         
@@ -189,7 +188,7 @@ class FFRegressor(pl.LightningModule):
             return {'optimizer': opt, 'lr_scheduler': lr_scheduler, 'monitor': 'loss'}
         elif self.cosine_annealing_lr_schedule:
             approx_num_iterations_per_epoch = 10
-            lr_scheduler = th.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=6*approx_num_iterations_per_epoch)
+            lr_scheduler = th.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=self.cos_T_0, T_mult=self.cos_T_mult)
             return {'optimizer': opt, 'lr_scheduler': lr_scheduler} 
         else: return opt
 
