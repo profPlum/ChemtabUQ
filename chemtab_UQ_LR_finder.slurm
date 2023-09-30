@@ -39,5 +39,5 @@ RESUME=F # Tell job stub to load last ckpts from this experiment
 
 conda activate pytorch_distributed_cuda3 
 for i in {1..100}; do
-    srun -n 1 python ChemtabUQ.py tune --data.class_path=MeanRegressorDataModule --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True --trainer.accelerator=gpu --trainer.auto_lr_find True --data.batch_size=10000 --lr_scheduler pytorch_lightning.cli.ReduceLROnPlateau --lr_scheduler.monitor=epoch --data.group_key=null
+    srun -n 1 python ChemtabUQ.py tune --data.class_path=MeanRegressorDataModule --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True --trainer.accelerator=gpu --trainer.auto_lr_find True --data.batch_size=10000 --data.group_key=null --model.reduce_lr_on_plateu_shedule=False --model.cosine_annealing_lr_schedule=True
 done
