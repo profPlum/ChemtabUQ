@@ -184,7 +184,7 @@ class FFRegressor(pl.LightningModule):
         
         assert not (self.reduce_lr_on_plateu_shedule and self.cosine_annealing_lr_schedule), 'lr scheduler options are mutually exclusive!'
         if self.reduce_lr_on_plateu_shedule:
-            lr_scheduler = pl.cli.ReduceLROnPlateau(opt, monitor='loss', cooldown=25, factor=0.75)
+            lr_scheduler = pl.cli.ReduceLROnPlateau(opt, monitor='loss', cooldown=100, factor=0.75)
             return {'optimizer': opt, 'lr_scheduler': lr_scheduler, 'monitor': 'loss'}
         elif self.cosine_annealing_lr_schedule:
             approx_num_iterations_per_epoch = 10
