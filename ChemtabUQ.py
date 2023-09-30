@@ -133,7 +133,7 @@ class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
                  n_layers: int=8, learning_rate: float=7.585775750291837e-06, lr_coef: float=1.0, 
                  MAPE_loss: bool=False, SELU: bool = True, reduce_lr_on_plateu_shedule=False,
-                 cosine_annealing_lr_schedule=False, cos_T_0=60, cos_T_mult=1.0):
+                 cosine_annealing_lr_schedule=False, cos_T_0=60, cos_T_mult=1):
         """
         Just a simple FF Network that scales
 
@@ -182,7 +182,7 @@ class FFRegressor(pl.LightningModule):
     def configure_optimizers(self):
         opt = th.optim.Adam(self.parameters(), lr=self.learning_rate)
         
-        assert not (reduce_lr_on_plateu_shedule and cosine_annealing_lr_schedule), 'lr scheduler options are mutually exclusive!'
+        assert not (self.reduce_lr_on_plateu_shedule and self.cosine_annealing_lr_schedule), 'lr scheduler options are mutually exclusive!'
         if self.reduce_lr_on_plateu_shedule:
             lr_scheduler = pl.cli.ReduceLROnPlateau(opt, monitor='loss', cooldown=25, factor=0.75)
             return {'optimizer': opt, 'lr_scheduler': lr_scheduler, 'monitor': 'loss'}
