@@ -15,7 +15,7 @@ from torchmetrics.regression import MeanAbsolutePercentageError
 
 import pytorch_lightning as pl
 import pytorch_lightning.cli
-from pytorch_lightning.cli import LightningCLI, LightningArgumentParser
+from pytorch_lightning.cli import LightningCLI, LightningArgumentParser, SaveConfigCallback
 from pytorch_lightning.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
 from pytorch_lightning.callbacks import DeviceStatsMonitor, EarlyStopping
 from pytorch_lightning.utilities import grad_norm # for grad-norm tracking
@@ -316,10 +316,17 @@ class MyLightningCLI(pl.cli.LightningCLI):
         #parser.link_arguments(['data.dataset'], 'model.input_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=False)) # holyshit this works!
         #parser.link_arguments(['data.dataset'], 'model.output_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=True))
 
+class LoggerSaveConfigCallback(SaveConfigCallback):
+    """ from PytorchLightning website as recommended for recording the 'config' as 'hyperparamters' for the logger """
+    def save_config(self, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
+        if isinstance(trainer.logger, Logger):
+            config = self.parser.dump(self.config, skip_none=False)  # Required for proper reproducibility
+            trainer.logger.log_hyperparams({"config": config})
+
 # HINT, try this: python ChemtabUQ.py fit --data.help MeanRegressorDataModule !! Gives you great overview of possible CLI args to the data module class for training more general Chemtab mean models
 # Example Usage: srun --ntasks-per-node=2 python ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --trainer.accelerator=gpu --trainer.devices=2 --trainer.num_nodes=2
 def cli_main():
-    cli=MyLightningCLI(FFRegressor, UQ_DataModule, subclass_mode_data=True, save_config_kwargs={"overwrite": True})
+    cli=MyLightningCLI(FFRegressor, UQ_DataModule, subclass_mode_data=True, save_config_callback=LoggerSaveConfigCallback, save_config_kwargs={"overwrite": True})
     cli.trainer.save_checkpoint("model.ckpt")
 
 if __name__=='__main__':
