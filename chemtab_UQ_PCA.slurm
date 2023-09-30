@@ -14,8 +14,8 @@
 #SBATCH --nodes=1 # This needs to match Trainer(nodes=...)
 #SBATCH --partition=general-compute
 #SBATCH --qos=general-compute
-#SBATCH --time=6:00:00 # TODO: add more time?
-#SBATCH --job-name="Best-SousCPV" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
+#SBATCH --time=20:00:00 # TODO: add more time?
+#SBATCH --job-name="SousCPV" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
 
 # #SBATCH --constraint="V100|P100"
 # #SBATCH --constraint="A100|H100"
@@ -45,8 +45,9 @@ EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.g
 # NOTE: LR finder found: --model.learning_rate 0.0001445439770745928 (big batch=200k)
 # NOTE: LR finder found: --model.learning_rate 5.608e-06 (big batch=100k, median over 20+ trials)
 # NOTE: LR finder found: --model.learning_rate 0.0002596525 (big batch=100k, mean over 20+ trials)
-# NOTE: LR finder found: --model.learning_rate 4.786300923226383e-07 (batch=20000)
-TRAIN_CFG="--model.hidden_size=500 --data.batch_size=10000 --model.SELU True --model.hidden_size=500 --model.reduce_lr_on_plateu_shedule=True --model.learning_rate 0.00014454 --trainer.gradient_clip_val 0.25"
+# NOTE: LR finder found: --model.learning_rate 1.318e-07 (batch=20000, median over 200 trials)
+# NOTE: LR finder found: --model.learning_rate 1.663e-05 (batch=20000, mean over 200 trials)
+TRAIN_CFG="--model.hidden_size=2000 --data.batch_size=10000 --model.SELU True --model.reduce_lr_on_plateu_shedule=False --model.cosine_annealing_lr_schedule=True --model.learning_rate 0.0001445439770745928 --trainer.gradient_clip_val 0.25"
 MEAN_ONLY=T # Turn off UQ for now
 
 #IMPORTANT: "best config"

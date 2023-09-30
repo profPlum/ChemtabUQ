@@ -132,7 +132,8 @@ class UQErrorPredictionDataset(Dataset):
 class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
                  n_layers: int=8, learning_rate: float=7.585775750291837e-06, lr_coef: float=1.0, 
-                 MAPE_loss: bool=False, SELU: bool = True, reduce_lr_on_plateu_shedule=False):
+                 MAPE_loss: bool=False, SELU: bool = True, reduce_lr_on_plateu_shedule=False,
+                 cosine_annealing_lr_schedule=False):
         """
         Just a simple FF Network that scales
 
@@ -146,6 +147,7 @@ class FFRegressor(pl.LightningModule):
         :param SELU: uses SELU activation & initialization for normalized acivations (better than batch norm)
         """
         super().__init__()
+
         self.save_hyperparameters() # save hyper-params to TB logs for better analysis later! 
 
         learning_rate *= lr_coef; del lr_coef
@@ -180,9 +182,15 @@ class FFRegressor(pl.LightningModule):
     # TODO: test moving to CLI? (would require rework on lr_coef...)
     def configure_optimizers(self):
         opt = th.optim.Adam(self.parameters(), lr=self.learning_rate)
+        
+        assert not (reduce_lr_on_plateu_shedule and cosine_annealing_lr_schedule), 'lr scheduler options are mutually exclusive!'
         if self.reduce_lr_on_plateu_shedule:
-            lr_scheduler = pl.cli.ReduceLROnPlateau(opt, monitor='loss')
+            lr_scheduler = pl.cli.ReduceLROnPlateau(opt, monitor='loss', cooldown=25, factor=0.75)
             return {'optimizer': opt, 'lr_scheduler': lr_scheduler, 'monitor': 'loss'}
+        elif self.cosine_annealing_lr_schedule:
+            approx_num_iterations_per_epoch = 10
+            lr_scheduler = th.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=6*approx_num_iterations_per_epoch)
+            return {'optimizer': opt, 'lr_scheduler': lr_scheduler} 
         else: return opt
 
     # Track grad norm, instructions from here: 

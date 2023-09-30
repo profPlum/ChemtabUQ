@@ -1,0 +1,3 @@
+[submodule "chemtab-models"]
+	path = chemtab-models
+	url = git@github.com:ubdsgroup/chemtab-models.git
