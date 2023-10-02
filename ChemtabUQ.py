@@ -133,6 +133,7 @@ class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
                  n_layers: int=8, learning_rate: float=7.585775750291837e-06, lr_coef: float=1.0, 
                  MAPE_loss: bool=False, SELU: bool = True, reduce_lr_on_plateu_shedule: bool=False,
+                 RLoP_patience=10, RLoP_cooldown=100, RLoP_factor=0.75, 
                  cosine_annealing_lr_schedule: bool=False, cos_T_0: int=60, cos_T_mult: int=1):
         """
         Just a simple FF Network that scales
@@ -184,7 +185,7 @@ class FFRegressor(pl.LightningModule):
         
         assert not (self.reduce_lr_on_plateu_shedule and self.cosine_annealing_lr_schedule), 'lr scheduler options are mutually exclusive!'
         if self.reduce_lr_on_plateu_shedule:
-            lr_scheduler = pl.cli.ReduceLROnPlateau(opt, monitor='loss', cooldown=100, factor=0.75)
+            lr_scheduler = pl.cli.ReduceLROnPlateau(opt, monitor='loss', cooldown=self.RLoP_cooldown, factor=self.RLoP_factor, patience=self.RLoP_patience)
             return {'optimizer': opt, 'lr_scheduler': lr_scheduler, 'monitor': 'loss'}
         elif self.cosine_annealing_lr_schedule:
             approx_num_iterations_per_epoch = 10
@@ -327,7 +328,7 @@ class LoggerSaveConfigCallback(SaveConfigCallback):
 # Example Usage: srun --ntasks-per-node=2 python ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --trainer.accelerator=gpu --trainer.devices=2 --trainer.num_nodes=2
 def cli_main():
     cli=MyLightningCLI(FFRegressor, UQ_DataModule, subclass_mode_data=True, #save_config_callback=LoggerSaveConfigCallback, 
-    save_config_kwargs={"overwrite": True})
+        save_config_kwargs={"overwrite": True})
     cli.trainer.save_checkpoint("model.ckpt")
 
 if __name__=='__main__':
