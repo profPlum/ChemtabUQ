@@ -132,8 +132,8 @@ class UQErrorPredictionDataset(Dataset):
 class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
                  n_layers: int=8, learning_rate: float=7.585775750291837e-06, lr_coef: float=1.0, 
-                 MAPE_loss: bool=False, SELU: bool = True, reduce_lr_on_plateu_shedule=False,
-                 cosine_annealing_lr_schedule=False, cos_T_0=60, cos_T_mult=1):
+                 MAPE_loss: bool=False, SELU: bool = True, reduce_lr_on_plateu_shedule: bool=False,
+                 cosine_annealing_lr_schedule: bool=False, cos_T_0: int=60, cos_T_mult: int=1):
         """
         Just a simple FF Network that scales
 
@@ -315,6 +315,7 @@ class MyLightningCLI(pl.cli.LightningCLI):
         #parser.link_arguments(['data.dataset'], 'model.input_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=False)) # holyshit this works!
         #parser.link_arguments(['data.dataset'], 'model.output_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=True))
 
+# TODO: Use me? logs all CLI args (e.g. gradient clipping) as hyper-params for tensorboard logger
 class LoggerSaveConfigCallback(SaveConfigCallback):
     """ from PytorchLightning website as recommended for recording the 'config' as 'hyperparamters' for the logger """
     def save_config(self, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
@@ -325,7 +326,8 @@ class LoggerSaveConfigCallback(SaveConfigCallback):
 # HINT, try this: python ChemtabUQ.py fit --data.help MeanRegressorDataModule !! Gives you great overview of possible CLI args to the data module class for training more general Chemtab mean models
 # Example Usage: srun --ntasks-per-node=2 python ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --trainer.accelerator=gpu --trainer.devices=2 --trainer.num_nodes=2
 def cli_main():
-    cli=MyLightningCLI(FFRegressor, UQ_DataModule, subclass_mode_data=True, save_config_callback=LoggerSaveConfigCallback, save_config_kwargs={"overwrite": True})
+    cli=MyLightningCLI(FFRegressor, UQ_DataModule, subclass_mode_data=True, #save_config_callback=LoggerSaveConfigCallback, 
+    save_config_kwargs={"overwrite": True})
     cli.trainer.save_checkpoint("model.ckpt")
 
 if __name__=='__main__':
