@@ -181,15 +181,17 @@ class FFRegressor(pl.LightningModule):
         return self.regressor(inputs)
 
     def configure_optimizers(self):
+        min_lr = 1e-8
+        assert self.learning_rate>min_lr, 'learning rate < 1e-8 is crazy!!'
         opt = th.optim.Adam(self.parameters(), lr=self.learning_rate)
         
         assert not (self.reduce_lr_on_plateu_shedule and self.cosine_annealing_lr_schedule), 'lr scheduler options are mutually exclusive!'
         if self.reduce_lr_on_plateu_shedule:
-            lr_scheduler = pl.cli.ReduceLROnPlateau(opt, monitor='loss', cooldown=self.RLoP_cooldown, factor=self.RLoP_factor, patience=self.RLoP_patience)
+            lr_scheduler = pl.cli.ReduceLROnPlateau(opt, monitor='loss', cooldown=self.RLoP_cooldown, factor=self.RLoP_factor, patience=self.RLoP_patience, min_lr=min_lr)
             return {'optimizer': opt, 'lr_scheduler': lr_scheduler, 'monitor': 'loss'}
         elif self.cosine_annealing_lr_schedule:
             approx_num_iterations_per_epoch = 10
-            lr_scheduler = th.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=self.cos_T_0, T_mult=self.cos_T_mult)
+            lr_scheduler = th.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=self.cos_T_0, T_mult=self.cos_T_mult, eta_min=min_lr)
             return {'optimizer': opt, 'lr_scheduler': lr_scheduler} 
         else: return opt
 
@@ -316,7 +318,8 @@ class MyLightningCLI(pl.cli.LightningCLI):
         #parser.link_arguments(['data.dataset'], 'model.input_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=False)) # holyshit this works!
         #parser.link_arguments(['data.dataset'], 'model.output_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=True))
 
-# TODO: Use me? logs all CLI args (e.g. gradient clipping) as hyper-params for tensorboard logger
+# TODO: fix me, currently doesn't work: now new hyper-params are recorded this way!
+# NOTE: logs all CLI args (e.g. gradient clipping) as hyper-params for tensorboard logger
 class LoggerSaveConfigCallback(SaveConfigCallback):
     """ from PytorchLightning website as recommended for recording the 'config' as 'hyperparamters' for the logger """
     def save_config(self, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
