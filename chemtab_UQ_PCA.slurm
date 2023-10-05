@@ -14,8 +14,8 @@
 #SBATCH --nodes=1 # This needs to match Trainer(nodes=...)
 #SBATCH --partition=general-compute
 #SBATCH --qos=general-compute
-#SBATCH --time=12:00:00 # TODO: add more time?
-#SBATCH --job-name="MAPE-SousCPV-10_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
+#SBATCH --time=6:00:00 # TODO: add more time?
+#SBATCH --job-name="SousCPV-Identity" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
 
 # #SBATCH --constraint="V100|P100"
 # #SBATCH --constraint="A100|H100"
@@ -33,13 +33,13 @@ INPUTS=mass_CPV # we OMIT the _PC postfix b/c we want to include zmix in inputs
 #OUTPUTS=Yi
 OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constraints
 #OUTPUTS=souener
-LOSS='--model.MAPE_loss True'
+#LOSS='--model.MAPE_loss True'
 RESUME=F # Tell job stub to load last ckpts from this experiment
 #####################################################
 
 # IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script!
-EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=~/data/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1 $LOSS"
+EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1 $LOSS"
 # this set of args are relatively constant across experiments or they take args specified elsewhere
 
 # NOTE: LR finder found: --model.learning_rate 0.0001445439770745928 (big batch=200k)
