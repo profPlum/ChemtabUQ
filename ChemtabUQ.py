@@ -190,8 +190,8 @@ class FFRegressor(pl.LightningModule):
             lr_scheduler = pl.cli.ReduceLROnPlateau(opt, monitor='loss', cooldown=self.RLoP_cooldown, factor=self.RLoP_factor, patience=self.RLoP_patience, min_lr=min_lr)
             return {'optimizer': opt, 'lr_scheduler': lr_scheduler, 'monitor': 'loss'}
         elif self.cosine_annealing_lr_schedule:
-            approx_num_iterations_per_epoch = 10
-            lr_scheduler = th.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=self.cos_T_0, T_mult=self.cos_T_mult, eta_min=min_lr)
+            if self.cos_T_mult: lr_scheduler = th.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=self.cos_T_0, T_mult=self.cos_T_mult, eta_min=min_lr)
+            else: lr_scheduler = th.optim.lr_scheduler.CosineAnnealing(opt, T_max=self.cos_T_0, eta_min=min_lr)
             return {'optimizer': opt, 'lr_scheduler': lr_scheduler} 
         else: return opt
 
