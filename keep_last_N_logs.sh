@@ -6,6 +6,7 @@ n_keep=$2
 
 # remove these temp files
 rm -r $logdir/mean_regressors
+rm -r $logdir/InteractiveJob
 
 model_logs=$(/bin/ls -t $logdir/*/version*/config.yaml)
 #echo model_logs: $model_logs
