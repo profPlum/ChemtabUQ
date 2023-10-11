@@ -59,28 +59,22 @@ export_CPVs_and_rotation = function(variance_weighted=T) {
   if (!variance_weighted) rotation = diag(1/mass_PCA$scale)%*%mass_PCA$rotation # emb scaling
   stopifnot(all.equal(as.matrix(mass_frac_data)%*%rotation, mass_PCA$x))
   stopifnot(names(coef(zmix_lm)[-1])==rownames(rotation))
-  
-  rotation=diag(n_PCs) # TODO: remove me!
   rownames(rotation) = colnames(mass_frac_data)
-  colnames(rotation) = paste0('CPV_PC_', colnames(mass_frac_data)) # colnames renamed from V1 for clarity & for matching with 'like' in pandas
+  colnames(rotation) = paste0('CPV_PC_', 1:n_PCs-1) # colnames renamed from V1 for clarity & for matching with 'like' in pandas
   rotation = cbind(CPV_zmix=coef(zmix_lm)[-1], rotation) # ^ I've confirmed that ablate code doesn't rely on column names anyways...
   #View(rotation[1:5, 1:5])
 
   # NOTE: apparently using linear models here has a noticable decrease on R2 (though slight), so we'll avoid it
   # rotation = fit_linear_transform(mass_frac_data, cbind(Chemtab_data$zmix, mass_PCA$x))
-  Q_rot = rotation #%>% qr() %>% qr.Q() # doesn't effect reconstruction loss!
-  cat('str(Q_rot):')
-  str(Q_rot)
-  cat('str(rot):')
-  str(rotation)
+  Q_rot = rotation %>% qr() %>% qr.Q() # doesn't effect reconstruction loss!
   dimnames(Q_rot)=dimnames(rotation)
 
-  ## It flips the sign of the zmix weights & normalizes them, we flip sign back but keep it normalized
-  #Q_rot = Q_rot*cor(Q_rot[,1], rotation[,1]) # this correlation should be either 1 or -1 & indicates a sign flip
-  #stopifnot(all.equal(Q_rot[,1], rotation[,1]/norm(as.matrix(rotation[,1]), type='2')))
-  ## Confirm that first CPV is still (proportional to) Zmix. Also kenny confirmed proportional to is enough.
-  ## IMPORTANT: It's OK that zmix is correlated with CPVs!!
-  ## correlation!=W_matrix orthogonality (cor depends on mass_frac data)
+  # It flips the sign of the zmix weights & normalizes them, we flip sign back but keep it normalized
+  Q_rot = Q_rot*cor(Q_rot[,1], rotation[,1]) # this correlation should be either 1 or -1 & indicates a sign flip
+  stopifnot(all.equal(Q_rot[,1], rotation[,1]/norm(as.matrix(rotation[,1]), type='2')))
+  # Confirm that first CPV is still (proportional to) Zmix. Also kenny confirmed proportional to is enough.
+  # IMPORTANT: It's OK that zmix is correlated with CPVs!!
+  # correlation!=W_matrix orthogonality (cor depends on mass_frac data)
   
   ####################### Augment Original Dataset with CPVs + CPV_sources #######################
 
