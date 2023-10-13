@@ -34,7 +34,7 @@ find_last_ckpt() {
 }
 
 echo RESUME: $RESUME
-if [ $RESUME == T ]; then
+if [[ $RESUME == T ]]; then
     # NOTE: this works for BOTH Sigma & Mean models b/c we use --trainer.default_root_dir which these checkpoint paths will implicitly be relative to!
     cd CT_logs_Mu
     last_checkpoint=$(find_last_ckpt ./$SLURM_JOB_NAME/)

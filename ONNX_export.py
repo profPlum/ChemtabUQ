@@ -9,7 +9,6 @@ import pytorch_lightning as pl
 import torch as pt
 import tensorflow as tf
 import tensorflow.keras as keras
-import matplotlib
 
 ######################### Post-Processing Layers #########################
 
@@ -187,7 +186,7 @@ import os, argparse
 # default checkpoint is the test case
 if __name__=='__main__':
     # get default checkpoint
-    candidate_ckpts=glob(f'./CT_logs_Mu/Real*/version_*/checkpoints/*.ckpt')
+    candidate_ckpts=glob(f'./CT_logs_Mu/*/version_*/checkpoints/*.ckpt')
     ckpt_path = random.choice(candidate_ckpts) 
     print(ckpt_path)
     
