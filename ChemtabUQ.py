@@ -131,9 +131,9 @@ class UQErrorPredictionDataset(Dataset):
 
 class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
-                 n_layers: int=8, learning_rate: float=7.585775750291837e-06, lr_coef: float=1.0, 
-                 MAPE_loss: bool=False, SELU: bool = True, reduce_lr_on_plateu_shedule: bool=False,
-                 RLoP_patience=10, RLoP_cooldown=100, RLoP_factor=0.75, 
+                 n_layers: int=8, learning_rate: float=7.585775750291837e-06, lr_coef: float=1.0,
+                 MAPE_loss: bool=False, sMAPE_loss: bool=False, MAE_loss: bool=False, SELU: bool = True,
+                 reduce_lr_on_plateu_shedule: bool=False, RLoP_patience=100, RLoP_cooldown=20, RLoP_factor=0.9, 
                  cosine_annealing_lr_schedule: bool=False, cos_T_0: int=60, cos_T_mult: int=1):
         """
         Just a simple FF Network that scales
@@ -145,6 +145,8 @@ class FFRegressor(pl.LightningModule):
         :param learning_rate: NN learning rate (default provided by auto_lr_finder)
         :param lr_coef: the learning_rate scaling coefficient (i.e. from larger batch size across gpus)
         :param MAPE_loss: (experimental) use MAPE as loss function
+        :param sMAPE_loss: (experimental) use sMAPE as a loss function
+        :param MAE_loss: use MAE as loss function
         :param SELU: uses SELU activation & initialization for normalized acivations (better than batch norm)
         """
         super().__init__()
@@ -153,8 +155,13 @@ class FFRegressor(pl.LightningModule):
 
         learning_rate *= lr_coef; del lr_coef
         if not output_size: output_size = input_size
-        self.loss = F.mse_loss
-        if MAPE_loss: self.loss=MeanAbsolutePercentageError()
+
+        self.loss = F.mse_loss # MSE is default loss
+        if MAE_loss: self.loss=F.mae_loss
+        elif MAPE_loss: self.loss=F_metrics.mean_absolute_percentage_error #MeanAbsolutePercentageError()
+        elif sMAPE_loss: self.loss=F_metrics.symmetric_mean_absolute_percentage_error
+        assert MAE_loss + MAPE_loss + sMAPE_loss <= 1 # all loss flags are mutually exclusive 
+
         vars(self).update(locals()); del self.self
         self.example_input_array=th.randn(16, self.input_size)
 
@@ -209,9 +216,10 @@ class FFRegressor(pl.LightningModule):
         self.log(prefix+'R2_var_weighted', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'),sync_dist=sync_dist)
         self.log(prefix+'R2_avg', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'),sync_dist=sync_dist)
         self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
-       
+        self.log(prefix+'sMAPE', F_metrics.symmetric_mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)      
+ 
         if val_metrics: # For now we are using MAPE for evaluating hps due to its importance in exponential distributions
-           self.log('hp_metric', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
+           self.log('hp_metric', F_metrics.symmetric_mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
  
         loss = self.loss(Y_pred, Y)
         self.log(prefix+'loss', loss, sync_dist=sync_dist)
