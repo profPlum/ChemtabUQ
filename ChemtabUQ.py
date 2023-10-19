@@ -157,7 +157,7 @@ class FFRegressor(pl.LightningModule):
         if not output_size: output_size = input_size
 
         self.loss = F.mse_loss # MSE is default loss
-        if MAE_loss: self.loss=F.mae_loss
+        if MAE_loss: self.loss=F.l1_loss
         elif MAPE_loss: self.loss=F_metrics.mean_absolute_percentage_error #MeanAbsolutePercentageError()
         elif sMAPE_loss: self.loss=F_metrics.symmetric_mean_absolute_percentage_error
         assert MAE_loss + MAPE_loss + sMAPE_loss <= 1 # all loss flags are mutually exclusive 
