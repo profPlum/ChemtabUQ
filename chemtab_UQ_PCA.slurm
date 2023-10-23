@@ -17,6 +17,8 @@
 #SBATCH --time=24:00:00
 #SBATCH --job-name="MAE-SousCPV-5_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
 
+export SLURM_JOB_NAME=MAE-SousCPV-5_CPVs
+
 # #SBATCH --constraint="V100|P100"
 # #SBATCH --constraint="A100|H100"
 # #SBATCH --gpus-per-node=2     # We need to request it "per-node" because pytorch needs visibility of all node's GPUs for some reason...
@@ -42,17 +44,23 @@ OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constra
 LOSS='--model.MAE_loss True'
 RESUME=T # Tell job stub to load last ckpts from this experiment
 #####################################################
+[ $RESUME != T ] && RESUME= # for safety
+if [ $RESUME ] && [ $SLURM_JOB_NAME == InteractiveJob ]; then
+    echo Error! SLURM_JOB_NAME == InteractiveJob \& RESUME=T!! >&2
+    echo It is not possible or wise to resume InteractiveJob, instead set SLURM_JOB_NAME manually! >&2
+fi
 
 #touch CT_logs_Mu/Inv-Identity/version_13646017
 
 # IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script!
-EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=$DATA --data.inputs_like=mass_CPV --data.outputs_like=$OUTPUTS --data.split_seed=42" #$RANDOM"
+EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=$DATA --data.inputs_like=mass_CPV --data.outputs_like=$OUTPUTS" #--data.split_seed=42" #$RANDOM"
 EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1 $LOSS"
 # this set of args are relatively constant across experiments or they take args specified elsewhere
 
 # add data split seed only when appropriate (redudant safety)
 if [[ $RESUME != T ]] && ! [[ "$EXTRA_PL_ARGS" =~ --data\.split_seed= ]]; then
+    echo adding split seed
     EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.split_seed=$RANDOM"
 fi
 
@@ -72,4 +80,8 @@ MEAN_ONLY=T # Turn off UQ for now
 #TRAIN_CFG="--trainer.max_epochs -1 $LOSS --model.SELU True --model.hidden_size=500 --data.batch_size=10000 --lr_scheduler pytorch_lightning.cli.ReduceLROnPlateau --lr_scheduler.monitor=epoch --model.learning_rate 0.00014454 --trainer.gradient_clip_val 0.25"
 
 EXTRA_PL_ARGS="$EXTRA_PL_ARGS $TRAIN_CFG" #--ckpt_path=last" # last isn't supported, it appears it doesn't work 
+
+# if RESUME=T we don't want to mess with existing settings
+[[ $RESUME ]] && EXTRA_PL_ARGS=
+
 . chemtab_UQ_job_stub.sh
