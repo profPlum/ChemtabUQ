@@ -218,8 +218,8 @@ class FFRegressor(pl.LightningModule):
         self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
         self.log(prefix+'sMAPE', F_metrics.symmetric_mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)      
  
-        if val_metrics: # For now we are using MAPE for evaluating hps due to its importance in exponential distributions
-           self.log('hp_metric', F_metrics.symmetric_mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
+        if val_metrics: # We are now using val_R2 again b/c we found out that it is more important than MAPE
+           self.log('hp_metric', F_metrics.r2_score(Y_pred, Y),sync_dist=sync_dist)
  
         loss = self.loss(Y_pred, Y)
         self.log(prefix+'loss', loss, sync_dist=sync_dist)
@@ -241,11 +241,15 @@ class FFRegressor(pl.LightningModule):
 # doubly important since we are seperating the mean regressor fitting from the UQ model fitting!
 # Lol I just crammed the previous functions into this class... I think it should work fine though?
 class UQ_DataModule(pl.LightningDataModule):
-    def __init__(self, dataset: Dataset, batch_size: int=27310, train_portion: float=0.8, data_workers: int=4, **kwd_args):
+    def __init__(self, dataset: Dataset, batch_size: int=27310, train_portion: float=0.8, 
+                 data_workers: int=4, split_seed: int=42, **kwd_args):
         """
         UQ data module (or mean regressor data module)
         :param dataset: this is the dataset you want to fit your "UQ" model to (can also be mean regressor)
         :param batch_size: the batch size for training & validation (default set by auto_batch_size_finder)
+        :param train_portion: portion of dataset to be trained on
+        :param data_workers: number of paralell workers to load the dataset per GPU
+        :param split_seed: the seed to be used for dataset splitting, encouraged to pass a random number for diversity
         """
         super().__init__()
         self.save_hyperparameters(ignore=['dataset'])
@@ -255,7 +259,7 @@ class UQ_DataModule(pl.LightningDataModule):
     
     def setup(self, stage=None): # simple version 
         assert float('.'.join(th.__version__.split('.')[:2]))>=1.13, 'torch.__version__ must be >= 1.13.0 in order to use random_split portions feature!'        
-        fixed_split_seed = th.Generator().manual_seed(42) # IMPORTANT: must be fixed so that this works across processes
+        fixed_split_seed = th.Generator().manual_seed(self.split_seed) # IMPORTANT: must be fixed so that this works across processes
         train, val = random_split(self.dataset, [self.train_portion, 1-self.train_portion], generator=fixed_split_seed) # requires torch version >= 1.13.0!
         assert len(train) % self.batch_size < len(self.dataset)//10, f'Batch size is too inefficient! It will require dropping {len(train) % self.batch_size} samples.'
 
@@ -307,11 +311,6 @@ class UQRegressorDataModule(UQ_DataModule):
         regressor_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
         super().__init__(regressor_dataset, **kwargs)
 
-#def UQ_DataModule_factory(data_fn: str, mean_regressor_fn: str = None, inputs_like='Yi', outputs_like='souspec', group_key='group', **kwd_args): 
-#   moments_dataset = UQMomentsDataset(data_fn, inputs_like=inputs_like, outputs_like=outputs_like, group_key=group_key)
-#   if mean_regressor_fn:
-#       return UQRegressorDataModule(moments_dataset, mean_regressor_fn, **kwd_args)
-#   else: return MeanRegressorDataModule(moments_dataset, **kwd_args)
 #########################################################################
 
 # NOTE: if you want to juggle between pytorch v2.0 and v<2.0 (e.g. for legacy or A100 GPUs) then you just need to juggle between pytorch_distributed_cuda3 (for legacy) and pytorch_distributed (for A100s)
@@ -335,8 +334,10 @@ class LoggerSaveConfigCallback(SaveConfigCallback):
             config = self.parser.dump(self.config, skip_none=False)  # Required for proper reproducibility
             trainer.logger.log_hyperparams({"config": config})
 
-# HINT, try this: python ChemtabUQ.py fit --data.help MeanRegressorDataModule !! Gives you great overview of possible CLI args to the data module class for training more general Chemtab mean models
-# Example Usage: srun --ntasks-per-node=2 python ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --trainer.accelerator=gpu --trainer.devices=2 --trainer.num_nodes=2
+# HINT, try this: python ChemtabUQ.py fit --data.help MeanRegressorDataModule !!
+# ^ Gives you great overview of possible CLI args to the data module class for training more general Chemtab mean models
+# Example Usage: srun --ntasks-per-node=2 python ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule 
+# --data.data_fn=../data/chrest_contiguous_group_sample100k.csv --trainer.accelerator=gpu --trainer.devices=2 --trainer.num_nodes=2
 def cli_main():
     cli=MyLightningCLI(FFRegressor, UQ_DataModule, subclass_mode_data=True, #save_config_callback=LoggerSaveConfigCallback, 
         save_config_kwargs={"overwrite": True})
