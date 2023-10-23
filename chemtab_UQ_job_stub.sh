@@ -32,11 +32,14 @@ echo EXTRA_PL_ARGS: $EXTRA_PL_ARGS
 echo lightning_CLI_args: $lightning_CLI_args
 
 echo RESUME: $RESUME
-if [[ $RESUME == T ]]; then
+if ((RESUME)); then
+    # TODO: remove this if/else if you think that RESUME should allow override params
     # NOTE: for resume we should exclude $diagnostic_CLI_args & $EXTRA_PL_ARGS!!
     if [[ "$EXTRA_PL_ARGS" ]]; then
         echo Error! EXTRA_PL_ARGS must be empty in order to resume properly!! >&2
         return 2 || exit 2
+    else
+        diagnostic_CLI_args= # we don't want to pass unnecesary arguments
     fi
  
     find_last_ckpt() {
@@ -48,16 +51,15 @@ if [[ $RESUME == T ]]; then
     cd CT_logs_Mu
     echo SLURM_JOB_NAME: $SLURM_JOB_NAME
     last_checkpoint=$(find_last_ckpt ./$SLURM_JOB_NAME/)
-    last_cfg=$(dirname $last_checkpoint)/../config.yaml
+    last_cfg=$(dirname $last_checkpoint)/../config.yaml # config loads hyper-parameter settings
     cd -
-    echo loading last_checkpoint: $last_checkpoint
-    diagnostic_CLI_args= # we don't want to pass unnecesary arguments
+    echo loading last_checkpoint: $last_checkpoint \& last config: $last_cfg
     lightning_CLI_args="--ckpt_path=$last_checkpoint -c $last_cfg $lightning_CLI_args"
 else
     echo We arent resuming last ckpt... >&2
 fi
 
-# combine everything
+# combine everything, AFTER RESUME if/else (b/c it can modify diagnostic_CLI_args)
 lightning_CLI_args="$EXTRA_PL_ARGS $lightning_CLI_args $diagnostic_CLI_args"
 
 # setup env based on GPUs allocated
@@ -81,7 +83,7 @@ mv model.ckpt mean_regressors/model-${SLURM_JOB_ID}.ckpt
 cd -
 
 cd CT_logs_Sigma
-if [ $MEAN_ONLY != T ]; then
+if ((MEAN_ONLY)); then
 	# TODO: fix bad mean regressor loading for cases with multiple jobs running at once
     srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=UQRegressorDataModule --data.mean_regressor_fn=~/ChemtabUQ/CT_logs_Mu/mean_regressors/model-${SLURM_JOB_ID}.ckpt $lightning_CLI_args #--trainer.default_root_dir=CT_logs_Sigma 
 	mkdir UQ_regressors 2> /dev/null

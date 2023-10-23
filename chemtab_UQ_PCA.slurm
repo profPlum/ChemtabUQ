@@ -17,8 +17,6 @@
 #SBATCH --time=24:00:00
 #SBATCH --job-name="MAE-SousCPV-5_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
 
-export SLURM_JOB_NAME=MAE-SousCPV-5_CPVs
-
 # #SBATCH --constraint="V100|P100"
 # #SBATCH --constraint="A100|H100"
 # #SBATCH --gpus-per-node=2     # We need to request it "per-node" because pytorch needs visibility of all node's GPUs for some reason...
@@ -42,10 +40,11 @@ OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constra
 #LOSS='--model.MAPE_loss True'
 #LOSS='--model.sMAPE_loss True'
 LOSS='--model.MAE_loss True'
-RESUME=T # Tell job stub to load last ckpts from this experiment
+RESUME=1 # Tell job stub to load last ckpts from this experiment
+#RESUME=0 # tell it not to resume
 #####################################################
-[ $RESUME != T ] && RESUME= # for safety
-if [ $RESUME ] && [ $SLURM_JOB_NAME == InteractiveJob ]; then
+
+if ((RESUME)) && [ $SLURM_JOB_NAME == InteractiveJob ]; then
     echo Error! SLURM_JOB_NAME == InteractiveJob \& RESUME=T!! >&2
     echo It is not possible or wise to resume InteractiveJob, instead set SLURM_JOB_NAME manually! >&2
 fi
@@ -59,9 +58,10 @@ EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.scale_output True --data.group_key=null --t
 # this set of args are relatively constant across experiments or they take args specified elsewhere
 
 # add data split seed only when appropriate (redudant safety)
-if [[ $RESUME != T ]] && ! [[ "$EXTRA_PL_ARGS" =~ --data\.split_seed= ]]; then
-    echo adding split seed
-    EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.split_seed=$RANDOM"
+if ((RESUME)) && ! [[ "$EXTRA_PL_ARGS" =~ --data\.split_seed= ]]; then
+    split_seed=$RANDOM
+    echo adding random split seed: $split_seed
+    EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.split_seed=$split_seed"
 fi
 
 # NOTE: LR finder found: --model.learning_rate 0.0001445439770745928 (big batch=200k)
@@ -74,14 +74,14 @@ TRAIN_CFG="--model.hidden_size=500 --data.batch_size=10000 --model.SELU True --t
 TRAIN_CFG="$TRAIN_CFG --model.reduce_lr_on_plateu_shedule=True --model.RLoP_patience=100 --model.RLoP_cooldown=20 --model.RLoP_factor=0.9"
 #TRAIN_CFG="$TRAIN_CFG --model.cosine_annealing_lr_schedule=True --model.cos_T_0=60 --model.cos_T_mult=null" # cosine annealing + warm restarts with increasing period
 #TRAIN_CFG="$TRAIN_CFG --model.cosine_annealing_lr_schedule=True --model.cos_T_0=1 --model.cos_T_mult=2" # consine annealing vanilla
-MEAN_ONLY=T # Turn off UQ for now
 
 #IMPORTANT: "best config"
 #TRAIN_CFG="--trainer.max_epochs -1 $LOSS --model.SELU True --model.hidden_size=500 --data.batch_size=10000 --lr_scheduler pytorch_lightning.cli.ReduceLROnPlateau --lr_scheduler.monitor=epoch --model.learning_rate 0.00014454 --trainer.gradient_clip_val 0.25"
 
+MEAN_ONLY=1 # Turn off UQ for now
+#MEAN_ONLY=0 # Turn on UQ
 EXTRA_PL_ARGS="$EXTRA_PL_ARGS $TRAIN_CFG" #--ckpt_path=last" # last isn't supported, it appears it doesn't work 
-
-# if RESUME=T we don't want to mess with existing settings
-[[ $RESUME ]] && EXTRA_PL_ARGS=
+((RESUME)) && EXTRA_PL_ARGS=
+# if RESUME==1 we don't want to mess with existing settings
 
 . chemtab_UQ_job_stub.sh
