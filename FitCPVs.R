@@ -95,7 +95,9 @@ export_CPVs_and_rotation = function(variance_weighted=T) {
   
   ################################# Write Files #################################################
   
-  Chemtab_data = cbind(Chemtab_data, mass_PCs, CPV_sources) %>% as_tibble %>% slice_sample(prop=1)
+  # we don't use slice_sample() anymore for 2 reasons: it makes finding ideal seed across different CPV datasets very difficult,
+  # it is already done both inside ChemtabUQ.py & Collate_Ablate_Data.R (both of these places do not interfere though)
+  Chemtab_data = cbind(Chemtab_data, mass_PCs, CPV_sources) %>% as_tibble #%>% slice_sample(prop=1)
   write.csv(Chemtab_data, file=paste0('TChem+CPVs+Zmix', ifelse(variance_weighted, '_MassR2', ''),'.csv.gz'))
 
   # don't sort the order of Q_rot rownames! Existing order is important as it reflects order in mech file!
