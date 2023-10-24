@@ -15,7 +15,7 @@
 #SBATCH --partition=general-compute
 #SBATCH --qos=general-compute
 #SBATCH --time=24:00:00
-#SBATCH --job-name="BestSeed-MAE-Souener-10_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
+#SBATCH --job-name="BestSeedX-MAE-SousCPV-25_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
 
 # #SBATCH --constraint="V100|P100"
 # #SBATCH --constraint="A100|H100"
@@ -30,13 +30,13 @@
 # 'incomparable' & thus requires new experiment name
 #####################################################
 #DATA=~/data/5_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
-DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
-#DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
+#DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
+DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
 #DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
 #INPUTS=mass_CPV # we OMIT the _PC postfix b/c we want to include zmix in inputs
 #OUTPUTS=Yi
-#OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constraints
-OUTPUTS=souener
+OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constraints
+#OUTPUTS=souener
 #LOSS='--model.MAPE_loss True'
 #LOSS='--model.sMAPE_loss True'
 LOSS='--model.MAE_loss True'
@@ -51,18 +51,29 @@ if ((RESUME)) && [ $SLURM_JOB_NAME == InteractiveJob ]; then
     return 1 || exit 1
 fi
 
-BEST_SEED_SOUENER=5605 # epoch=22759-val_loss=0.0024-val_MAPE=0.1256-val_R2_avg=0.9735 (hidden_size=500, CPVs=5)
-BEST_SEED_SOUSCPV=11436 # epoch=21993-val_loss=0.0013-val_MAPE=0.0553-val_R2_avg=0.9841 (hidden_size=1000, CPVs=10)
+# GOTCHA: Currently this is rather misleading b/c actually both 10_CPV_data & 5_CPV_data have different preshuffling 
+# so the seeds are incomparable. Hopefully they generalize across souener & souscpv.
+BEST_SEED_5_CPVs=5605 # epoch=22759-val_loss=0.0024-val_MAPE=0.1256-val_R2_avg=0.9735 (Souener, hidden_size=500, CPVs=5)
+BEST_SEED_10_CPVs=11436 # epoch=21993-val_loss=0.0013-val_MAPE=0.0553-val_R2_avg=0.9841 (SousCPV, hidden_size=1000, CPVs=10)
+BEST_SEED_25_CPVS=26415 # epoch=9688-val_loss=0.0027-val_MAPE=0.0165-val_R2_avg=0.9543 (Souener, hidden_size=1500, CPVs=25)
 
-if [[ $OUTPUTS == souener ]]; then
-    BEST_SEED=$BEST_SEED_SOUENER
-elif [[ $OUTPUTS == source_CPV_PC ]]; then
-    BEST_SEED=$BEST_SEED_SOUSCPV
+if [[ $DATA =~ /5_CPV_data ]]; then
+    # tested once on Souener (see above)
+    BEST_SEED=$BEST_SEED_5_CPVS
+    echo 5_CPV_data
+elif [[ $DATA =~ /10_CPV_data ]]; then
+    # tested once on SousCPV (see above)
+    BEST_SEED=$BEST_SEED_10_CPVs
+    echo 10_CPV_data
+elif [[ $DATA =~ /25_CPV_data ]]; then
+    # tested once on Souener (see above)
+    BEST_SEED=$BEST_SEED_25_CPVs
+    echo 25_CPV_data
 fi
 
 # IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script
-EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=$DATA --data.inputs_like=mass_CPV --data.outputs_like=$OUTPUTS" # --data.split_seed=$BEST_SEED"
+EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=$DATA --data.inputs_like=mass_CPV --data.outputs_like=$OUTPUTS --data.split_seed=$BEST_SEED"
 EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1 $LOSS"
 # this set of args are relatively constant across experiments or they take args specified elsewhere
 
