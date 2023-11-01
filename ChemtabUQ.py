@@ -204,7 +204,7 @@ class FFRegressor(pl.LightningModule):
 
     # Track grad norm, instructions from here: 
     # https://github.com/Lightning-AI/lightning/pull/16745
-    def optimizer_step(*args, **kwd_args):
+    def optimizer_step(self, *args, **kwd_args):
         super().optimizer_step(*args, **kwd_args)
         self.log_dict(grad_norm(self, norm_type='inf')) 
         # inspect (unscaled) gradients here

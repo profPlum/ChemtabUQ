@@ -88,14 +88,16 @@ else # ^ verified to work on P100 debug node, 9/24/23
     conda activate pytorch_distributed_cuda
 fi
 
+! [[ -e CT_logs_Mu ]] && mkdir CT_logs_Mu
 cd CT_logs_Mu
 srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule $lightning_CLI_args #--trainer.default_root_dir=CT_logs_Mu
 mkdir mean_regressors 2> /dev/null
 mv model.ckpt mean_regressors/model-${SLURM_JOB_ID}.ckpt
 cd -
 
+! [[ -e CT_logs_Sigma ]] && mkdir CT_logs_Sigma
 cd CT_logs_Sigma
-if ((MEAN_ONLY)); then
+if ((! MEAN_ONLY)); then
 	# TODO: fix bad mean regressor loading for cases with multiple jobs running at once
     srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=UQRegressorDataModule --data.mean_regressor_fn=~/ChemtabUQ/CT_logs_Mu/mean_regressors/model-${SLURM_JOB_ID}.ckpt $lightning_CLI_args #--trainer.default_root_dir=CT_logs_Sigma 
 	mkdir UQ_regressors 2> /dev/null
