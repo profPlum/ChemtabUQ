@@ -33,6 +33,18 @@ echo lightning_CLI_args: $lightning_CLI_args
 
 echo RESUME: $RESUME
 if ((RESUME)); then
+    # do a bunch of sanity/error checking
+    if [[ $SLURM_JOB_NAME == InteractiveJob ]]; then
+        echo Error! SLURM_JOB_NAME == InteractiveJob \& RESUME=T!! >&2
+        echo It is not possible or wise to resume InteractiveJob, instead set SLURM_JOB_NAME manually! >&2
+        return 1 || exit 1
+    fi
+    # NOTE: keep this even if we remove ban on any existing $EXTRA_PL_ARGS during RESUME
+    if [[ "$EXTRA_PL_ARGS" =~ --data\.split_seed= ]]; then
+        echo Error! You can\'t set the split seed when resuming this will break the validation split!! >&2
+        return 3 || exit 3
+    fi
+
     # TODO: remove this if/else if you think that RESUME should allow override params
     # NOTE: for resume we should exclude $diagnostic_CLI_args & $EXTRA_PL_ARGS!!
     if [[ "$EXTRA_PL_ARGS" ]]; then

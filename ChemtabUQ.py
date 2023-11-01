@@ -189,7 +189,7 @@ class FFRegressor(pl.LightningModule):
 
     def configure_optimizers(self):
         min_lr = 1e-8
-        assert self.learning_rate>min_lr, 'learning rate < 1e-8 is crazy!!'
+        assert self.learning_rate>=min_lr, 'learning rate < 1e-8 is crazy!!'
         opt = th.optim.Adam(self.parameters(), lr=self.learning_rate)
         
         assert not (self.reduce_lr_on_plateu_shedule and self.cosine_annealing_lr_schedule), 'lr scheduler options are mutually exclusive!'
@@ -204,8 +204,10 @@ class FFRegressor(pl.LightningModule):
 
     # Track grad norm, instructions from here: 
     # https://github.com/Lightning-AI/lightning/pull/16745
-    def on_before_optimizer_step(self, optimizer, *args):
-        self.log_dict(grad_norm(self, norm_type='inf')) # inspect (unscaled) gradients here
+    def optimizer_step(*args, **kwd_args):
+        super().optimizer_step(*args, **kwd_args)
+        self.log_dict(grad_norm(self, norm_type='inf')) 
+        # inspect (unscaled) gradients here
 
     # sync dist makes metrics more accurate (by syncing across devices), but slows down training
     def log_metrics(self, Y_pred, Y, val_metrics=False, sync_dist=True):
