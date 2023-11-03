@@ -15,34 +15,33 @@
 #SBATCH --partition=scavenger #general-compute
 #SBATCH --qos=scavenger #general-compute
 #SBATCH --time=12:00:00
-#SBATCH --job-name="MAE-Souener-5_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
+#SBATCH --job-name="MAE-SousCPV-10_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
 
 # #SBATCH --constraint="V100|P100"
 # #SBATCH --constraint="A100|H100"
-# #SBATCH --gpus-per-node=2     # We need to request it "per-node" because pytorch needs visibility of all node's GPUs for some reason...
 # #SBATCH --signal=SIGUSR1@90
 
 ## example command to tune lr & batch size 
 #python ChemtabUQ.py tune --data.class_path=MeanRegressorDataModule --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=mass_CPV --data.outputs_like=source_CPV_PC --data.scale_output True --trainer.accelerator=gpu --trainer.auto_lr_find True --trainer.auto_scale_batch_size power
 
 source ~/.bash_aliases
-export NUM_PERM_SPREAD=0.2 # we've already got pretty good parameters
+export NUM_PERTURB_SPREAD=0.2 # we've already got pretty good parameters
 
 #####################################################
 # These are the settings that when changed make other experiments
 # 'incomparable' & thus requires new experiment name
 #####################################################
-DATA=~/data/5_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
-#DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
+#DATA=~/data/5_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
+DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
 #DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
 #DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
 #INPUTS=mass_CPV # we OMIT the _PC postfix b/c we want to include zmix in inputs
 #OUTPUTS=Yi
-#OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constraints
-OUTPUTS=souener
+OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constraints
+#OUTPUTS=souener
 #LOSS='--model.MAPE_loss True'
 #LOSS='--model.sMAPE_loss True'
-LOSS='--model.MAE_loss True'
+#LOSS='--model.MSE_loss True'
 AUTO_PERTURB_ARGS=1 # turn on for auto-hparam search!
 RESUME=0 # tell it not to resume
 #RESUME=1 # Tell job stub to load last ckpts from this experiment
@@ -51,7 +50,7 @@ RESUME=0 # tell it not to resume
 
 # IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script
-EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=$DATA --data.inputs_like=mass_CPV --data.outputs_like=$OUTPUTS"
+EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=$DATA --data.inputs_like=mass_CPV --data.outputs_like=$OUTPUTS --data.sort_key=time"
 EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1 $LOSS"
 # this set of args are relatively constant across experiments or they take args specified elsewhere
 

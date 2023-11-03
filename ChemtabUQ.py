@@ -22,23 +22,24 @@ from pytorch_lightning.utilities import grad_norm # for grad-norm tracking
 
 # TODO: put inside prepare method for LigthningDataModule! (should only happen once then result saved to disk)
 class UQMomentsDataset(Dataset):
-    def __init__(self, csv_fn: str, inputs_like='Yi', outputs_like='souspec', group_key='group', scale_output=False, **kwd_args):
+    def __init__(self, csv_fn: str, inputs_like='Yi', outputs_like='souspec', group_key='group',
+                 sort_key='time', scale_output=False, **kwd_args):
         """
         Generic UQ Dataset which uses split-apply-combine on group_key to Produce UQ moments (mean & variance)
         :param csv_fn: name of csv file containing chrest data
-        :param inputs_like: pattern to match input columns in csv
-        :param outputs_like: pattern to match output columns in csv
-        :param scale: whether to scale the data for the model (i.e. using standard scaler)
+        :param inputs_like: matches (glob) *inputs_like* columns from csv for input (e.g. 'Yi')
+        :param outputs_like: matches (glob) *outputs_like* columns from csv for output (e.g. 'souspec')
+        :param group_key: the key to group on to get distributions' moments
+        :param sort_key: the key to sort the dataset on, can be set to None to disable sorting. 
+        (default is time so if data_split_seed=None then we train on all transcience)
+        :param scale_output: whether to scale the data for the model (i.e. using standard scaler)
         """
         df = pd.read_csv(csv_fn)
         print('original df len: ', len(df))
 
-        if group_key: # if group key is set, ensure groups have >1 element per (for UQ moments)
-            valid_group_keys = df.groupby(group_key).std().dropna().index
-            mask = np.isin(df[group_key], valid_group_keys)
-            df = df[mask] # mask df to remove all group keys with only 1 element (which gives nan std)
-            print('masked df len: ', len(df))
-        else: # if it is unset assume we are doing mean regressor & make group=index
+        if sort_key:
+            df=df.sort_values(by=sort_key)
+        if not group_key:
             group_key='group'
             df['group']=df.index
             print('no grouping!')
@@ -49,7 +50,8 @@ class UQMomentsDataset(Dataset):
             if scale:
                 scaler = StandardScaler()
                 print(f'old columns: {subset_df.columns}')
-                subset_df = pd.DataFrame(scaler.fit_transform(subset_df), index=subset_df.index, columns=subset_df.columns)
+                subset_df = pd.DataFrame(scaler.fit_transform(subset_df), index=subset_df.index,
+                                         columns=subset_df.columns)
                 print(f'new columns: {subset_df.columns}')
             subset_df.index = df[group_key]
             return subset_df, scaler
@@ -66,7 +68,7 @@ class UQMomentsDataset(Dataset):
         self.output_col_names = outs_df.columns
 
         print('reduced df len: ', self.df_sigma.shape[0])
-        assert self.df_sigma.shape[0]>1000
+        assert self.df_sigma.shape[0]>1000, 'did you use too few groups?'
 
     def to(self, device):
         self.df_mu=self.df_mu.to(device)
@@ -131,8 +133,8 @@ class UQErrorPredictionDataset(Dataset):
 
 class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
-                 n_layers: int=8, learning_rate: float=7.585775750291837e-06, lr_coef: float=1.0,
-                 MAPE_loss: bool=False, sMAPE_loss: bool=False, MAE_loss: bool=False, SELU: bool = True,
+                 n_layers: int=8, learning_rate: float=0.0001445439770745928, lr_coef: float=1.0,
+                 MAPE_loss: bool=False, sMAPE_loss: bool=False, MSE_loss: bool=False, SELU: bool = True,
                  reduce_lr_on_plateu_shedule: bool=False, RLoP_patience=100, RLoP_cooldown=20, RLoP_factor=0.9, 
                  cosine_annealing_lr_schedule: bool=False, cos_T_0: int=60, cos_T_mult: int=1):
         """
@@ -146,7 +148,7 @@ class FFRegressor(pl.LightningModule):
         :param lr_coef: the learning_rate scaling coefficient (i.e. from larger batch size across gpus)
         :param MAPE_loss: (experimental) use MAPE as loss function
         :param sMAPE_loss: (experimental) use sMAPE as a loss function
-        :param MAE_loss: use MAE as loss function
+        :param MSE_loss: use MSE as loss function
         :param SELU: uses SELU activation & initialization for normalized acivations (better than batch norm)
         """
         super().__init__()
@@ -156,8 +158,8 @@ class FFRegressor(pl.LightningModule):
         learning_rate *= lr_coef; del lr_coef
         if not output_size: output_size = input_size
 
-        self.loss = F.mse_loss # MSE is default loss
-        if MAE_loss: self.loss=F.l1_loss
+        self.loss = F.l1_loss # MAE is default loss
+        if MSE_loss: self.loss = F.mse_loss 
         elif MAPE_loss: self.loss=F_metrics.mean_absolute_percentage_error #MeanAbsolutePercentageError()
         elif sMAPE_loss: self.loss=F_metrics.symmetric_mean_absolute_percentage_error
         assert MAE_loss + MAPE_loss + sMAPE_loss <= 1 # all loss flags are mutually exclusive 
@@ -243,15 +245,16 @@ class FFRegressor(pl.LightningModule):
 # doubly important since we are seperating the mean regressor fitting from the UQ model fitting!
 # Lol I just crammed the previous functions into this class... I think it should work fine though?
 class UQ_DataModule(pl.LightningDataModule):
-    def __init__(self, dataset: Dataset, batch_size: int=27310, train_portion: float=0.8, 
-                 data_workers: int=4, split_seed: int=42, **kwd_args):
+    def __init__(self, dataset: Dataset, batch_size: int=10000, train_portion: float=0.8, 
+                 data_workers: int=4, split_seed: int=None, **kwd_args):
         """
         UQ data module (or mean regressor data module)
         :param dataset: this is the dataset you want to fit your "UQ" model to (can also be mean regressor)
         :param batch_size: the batch size for training & validation (default set by auto_batch_size_finder)
         :param train_portion: portion of dataset to be trained on
         :param data_workers: number of paralell workers to load the dataset per GPU
-        :param split_seed: the seed to be used for dataset splitting, encouraged to pass a random number for diversity
+        :param split_seed: the seed to be used for dataset splitting, encouraged to pass a random number for diversity.
+            But the default is None, which means that we just take the last X% of the dataset (sorted by time).
         """
         super().__init__()
         self.save_hyperparameters(ignore=['dataset'])
@@ -261,8 +264,12 @@ class UQ_DataModule(pl.LightningDataModule):
     
     def setup(self, stage=None): # simple version 
         assert float('.'.join(th.__version__.split('.')[:2]))>=1.13, 'torch.__version__ must be >= 1.13.0 in order to use random_split portions feature!'        
-        fixed_split_seed = th.Generator().manual_seed(self.split_seed) # IMPORTANT: must be fixed so that this works across processes
-        train, val = random_split(self.dataset, [self.train_portion, 1-self.train_portion], generator=fixed_split_seed) # requires torch version >= 1.13.0!
+        if self.split_seed:
+            fixed_split_seed = th.Generator().manual_seed(self.split_seed) # IMPORTANT: must be fixed so that this works across processes
+            train, val = random_split(self.dataset, [self.train_portion, 1-self.train_portion], generator=fixed_split_seed) # requires torch version >= 1.13.0!
+        else: # if split_seed is None then we act like keras and just get last X% of the data for validation (useful for time sorted split)
+            train_len = int(len(self.dataset)*self.train_portion)
+            train, val = self.dataset[:train_len], self.dataset[train_len:]
         assert len(train) % self.batch_size < len(self.dataset)//10, f'Batch size is too inefficient! It will require dropping {len(train) % self.batch_size} samples.'
 
         # IMPORTANT: drop_last is needed b/c it prevents unstable training at large batch sizes (e.g. batch_size=100k w/ trunc batch size 40)
