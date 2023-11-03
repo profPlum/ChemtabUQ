@@ -27,6 +27,9 @@ n_PCs=as.integer(Sys.getenv()['N_CPVS'])
 if (is.na(n_PCs)) n_PCs = 25 # default is 25 (1-to-1)
 cat('n_CPVs: ', n_PCs, '(change via N_CPVS env var)\n')
 
+use_QR=as.logical(Sys.getenv()['QR'])
+if (is.na(use_QR)) use_QR=TRUE
+
 #Chemtab_fn = '~/Downloads/TChem_collated.csv.gz'
 #Chemtab_fn = '~/Downloads/Data/wax_master.csv'
 Chemtab_fn = commandArgs(trailingOnly = T)[[1]]
@@ -50,7 +53,7 @@ stopifnot(glmnet_R2(zmix_lm)>=0.99)
 cat('Zmix lasso-lm coefs: ')
 print(coef(zmix_lm)[-1])
 
-export_CPVs_and_rotation = function(variance_weighted=T) {
+export_CPVs_and_rotation = function(variance_weighted=T, use_QR=T) {
   # Verified that removing centering doesn't effect reconstruction loss!! 9/21/23
   # However removing scaling does indeed negatively effect it
   # (unless we want to use mass variance weights...)
@@ -61,21 +64,26 @@ export_CPVs_and_rotation = function(variance_weighted=T) {
   stopifnot(names(coef(zmix_lm)[-1])==rownames(rotation))
   rownames(rotation) = colnames(mass_frac_data)
   colnames(rotation) = paste0('CPV_PC_', 1:n_PCs-1) # colnames renamed from V1 for clarity & for matching with 'like' in pandas
-  rotation = cbind(CPV_zmix=coef(zmix_lm)[-1], rotation) # ^ I've confirmed that ablate code doesn't rely on column names anyways...
+  zmix_coef_norm=norm(as.matrix(coef(zmix_lm)[-1]), type='2')
+  rotation = cbind(CPV_zmix=coef(zmix_lm)[-1]/zmix_coef_norm, rotation) # ^ I've confirmed that ablate code doesn't rely on column names anyways...
   #View(rotation[1:5, 1:5])
 
-  # NOTE: apparently using linear models here has a noticable decrease on R2 (though slight), so we'll avoid it
-  # rotation = fit_linear_transform(mass_frac_data, cbind(Chemtab_data$zmix, mass_PCA$x))
-  Q_rot = rotation %>% qr() %>% qr.Q() # doesn't effect reconstruction loss!
-  dimnames(Q_rot)=dimnames(rotation)
+  if (use_QR) {
+    # NOTE: apparently using linear models here has a noticable decrease on R2 (though slight), so we'll avoid it
+    # rotation = fit_linear_transform(mass_frac_data, cbind(Chemtab_data$zmix, mass_PCA$x))
+    Q_rot = rotation %>% qr() %>% qr.Q() # doesn't effect reconstruction loss!
+    dimnames(Q_rot)=dimnames(rotation)
 
-  # It flips the sign of the zmix weights & normalizes them, we flip sign back but keep it normalized
-  Q_rot = Q_rot*cor(Q_rot[,1], rotation[,1]) # this correlation should be either 1 or -1 & indicates a sign flip
-  stopifnot(all.equal(Q_rot[,1], rotation[,1]/norm(as.matrix(rotation[,1]), type='2')))
-  # Confirm that first CPV is still (proportional to) Zmix. Also kenny confirmed proportional to is enough.
-  # IMPORTANT: It's OK that zmix is correlated with CPVs!!
-  # correlation!=W_matrix orthogonality (cor depends on mass_frac data)
-  
+    # It flips the sign of the zmix weights & normalizes them, we flip sign back but keep it normalized
+    Q_rot = Q_rot*cor(Q_rot[,1], rotation[,1]) # this correlation should be either 1 or -1 & indicates a sign flip
+    stopifnot(all.equal(Q_rot[,1], rotation[,1]/norm(as.matrix(rotation[,1]), type='2')))
+    # Confirm that first CPV is still (proportional to) Zmix. Also kenny confirmed proportional to is enough.
+    # IMPORTANT: It's OK that zmix is correlated with CPVs!!
+    # correlation!=W_matrix orthogonality (cor depends on mass_frac data)
+  } else {
+    Q_rot=rotation
+  }
+
   ####################### Augment Original Dataset with CPVs + CPV_sources #######################
 
   stopifnot(sub('souspec', 'Yi', colnames(souspec_data))==rownames(Q_rot))
@@ -98,15 +106,15 @@ export_CPVs_and_rotation = function(variance_weighted=T) {
   # we don't use slice_sample() anymore for 2 reasons: it makes finding ideal seed across different CPV datasets very difficult,
   # it is already done both inside ChemtabUQ.py & Collate_Ablate_Data.R (both of these places do not interfere though)
   Chemtab_data = cbind(Chemtab_data, mass_PCs, CPV_sources) %>% as_tibble #%>% slice_sample(prop=1)
-  write.csv(Chemtab_data, file=paste0('TChem+CPVs+Zmix', ifelse(variance_weighted, '_MassR2', ''),'.csv.gz'))
+  write.csv(Chemtab_data, row.names=F, file=paste0('TChem+CPVs+Zmix', ifelse(use_QR, '_QR', ''), ifelse(variance_weighted, '_MassR2', ''),'.csv.gz'))
 
   # don't sort the order of Q_rot rownames! Existing order is important as it reflects order in mech file!
   rownames(Q_rot) = sub('Yi', '', rownames(Q_rot)) # we need to strip the 'Yi' prefix b/c ablate requires it (& only ablate will use this!)
-  write.csv(Q_rot, file=paste0('Q_rot', ifelse(variance_weighted, '_MassR2', ''),'.csv.gz'))
+  write.csv(Q_rot, file=paste0(ifelse(use_QR, 'Q_rot', 'rot'), ifelse(variance_weighted, '_MassR2', ''),'.csv.gz'))
   
   ###############################################################################################
 }
 
 # We're not sure 'which is better', but having both is good for experimentation!
-export_CPVs_and_rotation(variance_weighted=T)
-export_CPVs_and_rotation(variance_weighted=F)
+export_CPVs_and_rotation(variance_weighted=T, use_QR=use_QR)
+export_CPVs_and_rotation(variance_weighted=F, use_QR=use_QR)
