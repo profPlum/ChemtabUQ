@@ -9,7 +9,7 @@ from sklearn.preprocessing import StandardScaler
 import torch as th
 from torch import nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, random_split, Subset
 import torchmetrics.functional as F_metrics
 from torchmetrics.regression import MeanAbsolutePercentageError
 
@@ -269,7 +269,7 @@ class UQ_DataModule(pl.LightningDataModule):
             train, val = random_split(self.dataset, [self.train_portion, 1-self.train_portion], generator=fixed_split_seed) # requires torch version >= 1.13.0!
         else: # if split_seed is None then we act like keras and just get last X% of the data for validation (useful for time sorted split)
             train_len = int(len(self.dataset)*self.train_portion)
-            train, val = self.dataset[:train_len], self.dataset[train_len:]
+            train, val = Subset(self.dataset, range(train_len)), Subset(self.dataset, range(train_len, len(self.dataset))) 
         assert len(train) % self.batch_size < len(self.dataset)//10, f'Batch size is too inefficient! It will require dropping {len(train) % self.batch_size} samples.'
 
         # IMPORTANT: drop_last is needed b/c it prevents unstable training at large batch sizes (e.g. batch_size=100k w/ trunc batch size 40)
