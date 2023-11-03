@@ -31,9 +31,9 @@ export NUM_PERTURB_SPREAD=0.2 # we've already got pretty good parameters
 # These are the settings that when changed make other experiments
 # 'incomparable' & thus requires new experiment name
 #####################################################
-#DATA=~/data/5_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
-DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
-#DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
+#DATA=~/data/5_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
+DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
+#DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
 #DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
 #INPUTS=mass_CPV # we OMIT the _PC postfix b/c we want to include zmix in inputs
 #OUTPUTS=Yi
@@ -46,6 +46,7 @@ AUTO_PERTURB_ARGS=1 # turn on for auto-hparam search!
 RESUME=0 # tell it not to resume
 #RESUME=1 # Tell job stub to load last ckpts from this experiment
 #USE_BEST_SEED=1 # Tell job to use the best known split seed
+USE_TIMESORTED_SPLIT=1 # Tell job to exclude only the latest part of the simulation
 #####################################################
 
 # IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
@@ -93,9 +94,11 @@ elif [[ $DATA =~ /25_CPV_data ]]; then
 fi
 
 if ((USE_BEST_SEED)); then
-    EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.split_seed=$BEST_SEED"
+    # we turn off sort key for compatibility with older datasets which came preshuffled
+    EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.split_seed=$BEST_SEED --data.sort_key=null"
 else
     split_seed=$RANDOM
+    ((USE_TIMESORTED_SPLIT)) && split_seed=null # null means last X% (sorted by time by default)
     echo adding random split seed: $split_seed
     EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.split_seed=$split_seed"
 fi

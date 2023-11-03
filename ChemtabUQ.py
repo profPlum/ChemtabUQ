@@ -162,7 +162,7 @@ class FFRegressor(pl.LightningModule):
         if MSE_loss: self.loss = F.mse_loss 
         elif MAPE_loss: self.loss=F_metrics.mean_absolute_percentage_error #MeanAbsolutePercentageError()
         elif sMAPE_loss: self.loss=F_metrics.symmetric_mean_absolute_percentage_error
-        assert MAE_loss + MAPE_loss + sMAPE_loss <= 1 # all loss flags are mutually exclusive 
+        assert MSE_loss + MAPE_loss + sMAPE_loss <= 1 # all loss flags are mutually exclusive 
 
         vars(self).update(locals()); del self.self
         self.example_input_array=th.randn(16, self.input_size)
