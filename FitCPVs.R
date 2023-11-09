@@ -1,7 +1,32 @@
 library(tidyverse)
 source('~/.Rprofile')
 
-########################## GLMNET Helper Functions: ##########################
+########################## Helper Functions: ##########################
+
+# Everything is verified except whether it is ok to ignore bias: 8/2/22
+fit_linear_transform = function(X_df, Y_df) {
+  # verified to work 8/2/22 (checks that data frames are all numeric)
+  stopifnot(is.numeric(as.matrix(X_df)))
+  stopifnot(is.numeric(as.matrix(Y_df)))
+
+  rotation_matrix = NULL
+  for (j in 1:ncol(Y_df)) {
+    # TODO: verify that it is ok to ignore bias here?
+    model = lm(as.matrix(Y_df)[,j]~.-1, data=X_df) 
+  
+    print(summary(model))
+    rotation_matrix = cbind(rotation_matrix, coef(model))
+  }
+  colnames(rotation_matrix) = colnames(Y_df)
+  rownames(rotation_matrix) = gsub('`', '', rownames(rotation_matrix))
+
+  
+  # print R^2 of entire rotation matrix
+  R2 = 1-sum(apply((as.matrix(X_df)%*%rotation_matrix-Y_df)**2, -1, mean)/apply(Y_df, -1, var))
+  cat('R2 of linear transform fit: ', R2)
+
+  return(rotation_matrix)
+}
 
 glmnet_R2 = function(glmnet_cv_out, s='lambda.min') {
   ids = list(lambda.min=glmnet_cv_out$index[[1]], lambda.1se=glmnet_cv_out$index[[2]])
@@ -53,11 +78,12 @@ fit_significant_lm = function(formula, data, significance_level=0.05,
 
 # Accept n_PCs from env variable!
 n_PCs=as.integer(Sys.getenv()['N_CPVS'])
-if (is.na(n_PCs)) n_PCs = 25 # default is 25 (1-to-1)
-cat('n_CPVs: ', n_PCs, '(change via N_CPVS env var)\n')
+if (is.na(n_PCs)) n_PCs = 10 # default is 10 which tends to be sufficient
+cat('N_CPVs: ', n_PCs, '(change via N_CPVS env var)\n')
 
 use_QR=as.logical(Sys.getenv()['QR'])
 if (is.na(use_QR)) use_QR=TRUE
+cat('QR: ', use_QR, '(change via QR=T/F env var)\n')
 
 Chemtab_fn = commandArgs(trailingOnly = T)[[1]]
 cat('Chemtab_fn: ', Chemtab_fn, '\n')
@@ -82,6 +108,8 @@ setwd(dirname(Chemtab_fn))
 # zmix_coefs=coef(zmix_lm, s='lambda.min')[-1]
 # print(zmix_coefs)
 
+# NOTE: I've confirmed that using lasso lm although convenient actually gives
+# really bad zmix source term (like 60k at times, despite R^2>0.99), which means it isn't viable...
 train_data = cbind(zmix=Chemtab_data$zmix, mass_frac_data)
 zmix_lm = fit_significant_lm(zmix~.-1-YiAR, data=train_data)
 stopifnot(summary(zmix_lm)$adj.r.squared>=0.999)
@@ -92,24 +120,29 @@ zmix_coefs[excluded_Yis]=0
 zmix_coefs=zmix_coefs[colnames(mass_frac_data)] # sort
 stopifnot(max(abs(zmix_coefs)) < 50)
 
-export_CPVs_and_rotation = function(variance_weighted=T, use_QR=T) {
+export_CPVs_and_rotation = function(use_QR=T) {
+  # NOTE: ONLY variance weighted PCA makes sense... Because if you apply the scaling matrix then 1 of 2 things
+  # happen: either you have: an enormous matrix which is not at all orthonormal (e.g. col norm~=1e20, hence bounds
+  # of proof doesn't apply), or you then apply QR which removes the scaling anyhow since it enforces orthonormality. 
+  variance_weighted=T # NOTE: ONLY variance weighted PCA makes sense...
+  
   # Verified that removing centering doesn't effect reconstruction loss!! 9/21/23
   # However removing scaling does indeed negatively effect it
   # (unless we want to use mass variance weights...)
-  mass_PCA = prcomp(mass_frac_data, scale.=!variance_weighted, center=F, rank=n_PCs)
-  rotation = mass_PCA$rotation
-  if (!variance_weighted) rotation = diag(1/mass_PCA$scale)%*%mass_PCA$rotation # emb scaling
-  stopifnot(all.equal(as.matrix(mass_frac_data)%*%rotation, mass_PCA$x))
-  stopifnot(names(zmix_coefs)==rownames(rotation))
+  mass_PCA = prcomp(mass_frac_data, scale.=!variance_weighted, center=T, rank=n_PCs)
+  rotation=fit_linear_transform(mass_frac_data, mass_PCA$x)
+  # NOTE: apparently using linear models here has a noticable decrease on R2 (though slight)
+
+  #rotation = mass_PCA$rotation
+  #if (!variance_weighted) rotation = diag(1/mass_PCA$scale)%*%mass_PCA$rotation # emb scaling
+  #stopifnot(all.equal(as.matrix(mass_frac_data)%*%rotation, mass_PCA$x))
+  stopifnot(all(names(zmix_coefs)==rownames(rotation)))
   rownames(rotation) = colnames(mass_frac_data)
   colnames(rotation) = paste0('CPV_PC_', 1:n_PCs-1) # colnames renamed from V1 for clarity & for matching with 'like' in pandas
-  zmix_coef_norm=norm(as.matrix(coef(zmix_lm)[-1]), type='2')
-  rotation = cbind(CPV_zmix=coef(zmix_lm)[-1]/zmix_coef_norm, rotation) # ^ I've confirmed that ablate code doesn't rely on column names anyways...
-  #View(rotation[1:5, 1:5])
+  zmix_coef_norm=norm(as.matrix(zmix_coefs), type='2')
+  rotation = cbind(CPV_zmix=zmix_coefs/zmix_coef_norm, rotation) # ^ I've confirmed that ablate code doesn't rely on column names anyways...
 
   if (use_QR) {
-    # NOTE: apparently using linear models here has a noticable decrease on R2 (though slight), so we'll avoid it
-    # rotation = fit_linear_transform(mass_frac_data, cbind(Chemtab_data$zmix, mass_PCA$x))
     Q_rot = rotation %>% qr() %>% qr.Q() # doesn't effect reconstruction loss!
     dimnames(Q_rot)=dimnames(rotation)
 
@@ -156,5 +189,4 @@ export_CPVs_and_rotation = function(variance_weighted=T, use_QR=T) {
   ###############################################################################################
 }
 
-# We're not sure 'which is better', but having both is good for experimentation!
-results = export_CPVs_and_rotation(variance_weighted=T, use_QR=use_QR)
+export_CPVs_and_rotation(use_QR=use_QR)

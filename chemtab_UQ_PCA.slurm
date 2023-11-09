@@ -14,8 +14,8 @@
 #SBATCH --nodes=1 # This needs to match Trainer(nodes=...)
 #SBATCH --partition=scavenger #general-compute
 #SBATCH --qos=scavenger #general-compute
-#SBATCH --time=24:00:00
-#SBATCH --job-name="TimeSorted-MAE-SousCPV-10_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
+#SBATCH --time=12:00:00
+#SBATCH --job-name="NoQR-MAE-Souener-5_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
 
 # #SBATCH --constraint="V100|P100"
 # #SBATCH --constraint="A100|H100"
@@ -34,18 +34,18 @@ export NUM_PERTURB_SPREAD=0.2 # we've already got pretty good parameters
 
 # QR datasets:
 #DATA=~/data/5_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
-DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
+#DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
 #DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
 
 # NO QR datasets:
-#DATA=~/data/5_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
+DATA=~/data/5_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
 #DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
 #DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
 
 #INPUTS=mass_CPV # we OMIT the _PC postfix b/c we want to include zmix in inputs
 #OUTPUTS=Yi
-OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constraints
-#OUTPUTS=souener
+#OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constraints
+OUTPUTS=souener
 #LOSS='--model.MAPE_loss True'
 #LOSS='--model.sMAPE_loss True'
 #LOSS='--model.MSE_loss True'
