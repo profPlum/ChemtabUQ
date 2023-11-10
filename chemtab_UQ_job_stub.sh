@@ -64,7 +64,7 @@ else # ^ verified to work on P100 debug node, 9/24/23
 fi
 
 cd CT_logs_Mu
-srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule $lightning_CLI_args #--trainer.default_root_dir=CT_logs_Mu
+python ../ChemtabUQ.py fit --data.class_path=MeanRegressorDataModule $lightning_CLI_args #--trainer.default_root_dir=CT_logs_Mu
 mkdir mean_regressors 2> /dev/null
 mv model.ckpt mean_regressors/model-${SLURM_JOB_ID}.ckpt
 cd -
