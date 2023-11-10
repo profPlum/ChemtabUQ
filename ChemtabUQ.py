@@ -27,8 +27,8 @@ class UQMomentsDataset(Dataset):
         """
         Generic UQ Dataset which uses split-apply-combine on group_key to Produce UQ moments (mean & variance)
         :param csv_fn: name of csv file containing chrest data
-        :param inputs_like: matches  columns from csv for input if inputs_like in column_label  (e.g. 'Yi' matches 'YiH2O'...)
-        :param outputs_like: columns from csv for output if outputs_like in column_label (e.g. 'souspec' matches 'souspecH2O'...)
+        :param inputs_like: regex match columns from csv for input (e.g. 'Yi' matches 'YiH2O'...)
+        :param outputs_like: regex match columns from csv for output (e.g. 'souspec' matches 'souspecH2O'...)
         :param group_key: the key to group on to get distributions' moments
         :param sort_key: the key to sort the dataset on, can be set to None to disable sorting. 
         (default is time so if data_split_seed=None then we train on all transcience)
@@ -37,7 +37,7 @@ class UQMomentsDataset(Dataset):
 
         # This gives faster loading by only loaded needed columns
         col_load_predicate=lambda col_name: col_name in [group_key,sort_key] \
-            or (inputs_like in col_name) or (outputs_like in col_name)
+            or re.search(inputs_like, col_name) or re.search(outputs_like, col_name)
         df = pd.read_csv(csv_fn, usecols=col_load_predicate)
         print('original df len: ', len(df))
 
@@ -50,7 +50,7 @@ class UQMomentsDataset(Dataset):
 
         def filter_and_scale(like, scale: bool):
             scaler = None
-            subset_df = df.filter(like=like)
+            subset_df = df.filter(regex=like)
             if scale:
                 scaler = StandardScaler()
                 print(f'old columns: {subset_df.columns}')
