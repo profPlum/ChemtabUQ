@@ -125,17 +125,18 @@ export_CPVs_and_rotation = function(use_QR=T) {
   # happen: either you have: an enormous matrix which is not at all orthonormal (e.g. col norm~=1e20, hence bounds
   # of proof doesn't apply), or you then apply QR which removes the scaling anyhow since it enforces orthonormality. 
   variance_weighted=T # NOTE: ONLY variance weighted PCA makes sense...
-  
+  stopifnot(variance_weighted)
+
   # Verified that removing centering doesn't effect reconstruction loss!! 9/21/23
   # However removing scaling does indeed negatively effect it
   # (unless we want to use mass variance weights...)
-  mass_PCA = prcomp(mass_frac_data, scale.=!variance_weighted, center=T, rank=n_PCs)
-  rotation=fit_linear_transform(mass_frac_data, mass_PCA$x)
+  mass_PCA = prcomp(mass_frac_data, scale.=!variance_weighted, center=F, rank=n_PCs)
+  #rotation=fit_linear_transform(mass_frac_data, mass_PCA$x)
   # NOTE: apparently using linear models here has a noticable decrease on R2 (though slight)
 
-  #rotation = mass_PCA$rotation
-  #if (!variance_weighted) rotation = diag(1/mass_PCA$scale)%*%mass_PCA$rotation # emb scaling
-  #stopifnot(all.equal(as.matrix(mass_frac_data)%*%rotation, mass_PCA$x))
+  rotation = mass_PCA$rotation
+  if (!variance_weighted) rotation = diag(1/mass_PCA$scale)%*%mass_PCA$rotation # emb scaling
+  stopifnot(all.equal(as.matrix(mass_frac_data)%*%rotation, mass_PCA$x))
   stopifnot(all(names(zmix_coefs)==rownames(rotation)))
   rownames(rotation) = colnames(mass_frac_data)
   colnames(rotation) = paste0('CPV_PC_', 1:n_PCs-1) # colnames renamed from V1 for clarity & for matching with 'like' in pandas
@@ -171,14 +172,14 @@ export_CPVs_and_rotation = function(use_QR=T) {
   
   R2 = get_explained_var(mass_PCs, mass_frac_data, var_weighted=variance_weighted)
   cat('mass_PCs --> mass_frac_data, R2: ', R2, '\n')
-  stopifnot(R2>=0.95)
+  stopifnot(R2>=0.98)
   cat('range(mass_PCs): ', range(mass_PCs), '\n')
   
   ################################# Write Files #################################################
   
   # we don't use slice_sample() anymore for 2 reasons: it makes finding ideal seed across different CPV datasets very difficult,
   # it is already done both inside ChemtabUQ.py & Collate_Ablate_Data.R (both of these places do not interfere though)
-  Chemtab_data = cbind(Chemtab_data, mass_PCs, CPV_sources) %>% as_tibble #%>% slice_sample(prop=1)
+  Chemtab_data = cbind(Chemtab_data, mass_PCs, CPV_sources) %>% as_tibble %>% arrange(time) # %>% slice_sample(prop=1)
   write.csv(Chemtab_data, row.names=F, file=paste0('TChem+CPVs+Zmix', ifelse(use_QR, '_QR', ''), ifelse(variance_weighted, '_MassR2', ''),'.csv.gz'))
 
   # don't sort the order of Q_rot rownames! Existing order is important as it reflects order in mech file!
@@ -189,4 +190,4 @@ export_CPVs_and_rotation = function(use_QR=T) {
   ###############################################################################################
 }
 
-export_CPVs_and_rotation(use_QR=use_QR)
+result=export_CPVs_and_rotation(use_QR=use_QR)
