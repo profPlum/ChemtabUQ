@@ -15,7 +15,7 @@
 #SBATCH --partition=scavenger #general-compute
 #SBATCH --qos=scavenger #general-compute
 #SBATCH --time=12:00:00
-#SBATCH --job-name="NoQR-MAE-Souener-5_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
+#SBATCH --job-name="ZmixSource=0-Inv-10_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
 
 # #SBATCH --constraint="V100|P100"
 # #SBATCH --constraint="A100|H100"
@@ -33,32 +33,35 @@ export NUM_PERTURB_SPREAD=0.2 # we've already got pretty good parameters
 #####################################################
 
 # QR datasets:
-#DATA=~/data/5_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
-#DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
-#DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
+#DATA=~/data/TChem+Perturbedx2/5_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
+#DATA=~/data/TChem+Perturbedx2/10_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
+#DATA=~/data/TChem+Perturbedx2/25_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
 
 # NO QR datasets:
-DATA=~/data/5_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
-#DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
+#DATA=~/data/TChem+Perturbedx2/5_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
+#DATA=~/data/TChem+Perturbedx2/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
 #DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
 
-#INPUTS=mass_CPV # we OMIT the _PC postfix b/c we want to include zmix in inputs
+DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
+
+CPV_RANGE_PATTERN=$(regex_number_range 0 10)
+INPUTS=mass_CPV # we OMIT the _PC postfix b/c we want to include zmix in inputs
 #OUTPUTS=Yi
-#OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constraints
-OUTPUTS=souener
+OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constraints
+#OUTPUTS=souener
 #LOSS='--model.MAPE_loss True'
 #LOSS='--model.sMAPE_loss True'
 #LOSS='--model.MSE_loss True'
-AUTO_PERTURB_ARGS=1 # turn on for auto-hparam search!
+AUTO_PERTURB_ARGS=0 # turn on for auto-hparam search!
 #RESUME=1 # Tell job stub to load last ckpts from this experiment
 #USE_BEST_SEED=1 # Tell job to use the best known split seed
 USE_TIMESORTED_SPLIT=1 # Tell job to exclude only the latest part of the simulation
-#####################################################
+####################################################
 
 # IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script
-EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.data_fn=$DATA --data.inputs_like=mass_CPV --data.outputs_like=$OUTPUTS --data.sort_key=time"
-EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1 $LOSS"
+JOB_CFG="$JOB_CFG --data.data_fn=$DATA --data.inputs_like=mass_CPV --data.outputs_like=$OUTPUTS --data.sort_key=time"
+JOB_CFG="$JOB_CFG --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1 $LOSS"
 # this set of args are relatively constant across experiments or they take args specified elsewhere
 
 # NOTE: LR finder found: --model.learning_rate 0.0001445439770745928 (big batch=200k)
@@ -101,17 +104,18 @@ fi
 
 if ((USE_BEST_SEED)); then
     # we turn off sort key for compatibility with older datasets which came preshuffled
-    EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.split_seed=$BEST_SEED --data.sort_key=null"
+    JOB_CFG="$JOB_CFG --data.split_seed=$BEST_SEED --data.sort_key=null"
 else
     split_seed=$RANDOM
     ((USE_TIMESORTED_SPLIT)) && split_seed=null # null means last X% (sorted by time by default)
     echo adding random split seed: $split_seed
-    EXTRA_PL_ARGS="$EXTRA_PL_ARGS --data.split_seed=$split_seed"
+    JOB_CFG="$JOB_CFG --data.split_seed=$split_seed"
 fi
 
 #MEAN_ONLY=0 # Turn on UQ
 MEAN_ONLY=1 # Turn off UQ for now
-EXTRA_PL_ARGS="$EXTRA_PL_ARGS $TRAIN_CFG" #--ckpt_path=last" # last isn't supported, it appears it doesn't work 
-((RESUME)) && EXTRA_PL_ARGS= # if RESUME==1 we don't want to mess with existing settings
+JOB_CFG="$TRAIN_CFG $JOB_CFG" #--ckpt_path=last" # last isn't supported, it appears it doesn't work 
+((RESUME)) && JOB_CFG= # if RESUME==1 we don't want to mess with existing settings
+EXTRA_PL_ARGS="$JOB_CFG $EXTRA_PL_ARGS" # inject manually specified user arguments (with priority over job cfg)
 
 . chemtab_UQ_job_stub.sh
