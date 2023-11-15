@@ -250,7 +250,7 @@ class FFRegressor(pl.LightningModule):
 # Lol I just crammed the previous functions into this class... I think it should work fine though?
 class UQ_DataModule(pl.LightningDataModule):
     def __init__(self, dataset: Dataset, batch_size: int=10000, train_portion: float=0.8, 
-                 data_workers: int=4, split_seed: int=None, **kwd_args):
+                 data_workers: int=4, split_seed: int=29, **kwd_args):
         """
         UQ data module (or mean regressor data module)
         :param dataset: this is the dataset you want to fit your "UQ" model to (can also be mean regressor)
@@ -258,7 +258,7 @@ class UQ_DataModule(pl.LightningDataModule):
         :param train_portion: portion of dataset to be trained on
         :param data_workers: number of paralell workers to load the dataset per GPU
         :param split_seed: the seed to be used for dataset splitting, encouraged to pass a random number for diversity.
-            But the default is None, which means that we just take the last X% of the dataset (sorted by time).
+            Or you can pass none for time sorted split (but this is a bad idea).
         """
         super().__init__()
         self.save_hyperparameters(ignore=['dataset'])
