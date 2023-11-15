@@ -24,7 +24,7 @@ echo num nodes: $num_nodes
 
 # add diagnostic cli args which should always be set & clear any existing lightning_CLI_args value
 diagnostic_CLI_args="--trainer.logger=pytorch_lightning.loggers.TensorBoardLogger --trainer.logger.save_dir=. --trainer.logger.name=$SLURM_JOB_NAME --trainer.logger.version=$SLURM_JOB_ID" #--trainer.logger.save_dir=ChemtabUQ_TBlogs"
-diagnostic_CLI_args="$diagnostic_CLI_args --trainer.profiler simple --trainer.callbacks+=pytorch_lightning.callbacks.LearningRateMonitor --trainer.callbacks.logging_interval=epoch --trainer.callbacks+=pytorch_lightning.callbacks.DeviceStatsMonitor --trainer.callbacks+=pytorch_lightning.callbacks.ModelCheckpoint --trainer.callbacks.monitor=val_loss --trainer.callbacks.filename='{epoch}-{val_loss:.4f}-{val_MAPE:.4f}-{val_R2_avg:.4f}'" #--trainer.track_grad_norm 2" 
+diagnostic_CLI_args="$diagnostic_CLI_args --trainer.profiler simple --trainer.callbacks+=pytorch_lightning.callbacks.LearningRateMonitor --trainer.callbacks.logging_interval=epoch --trainer.callbacks+=pytorch_lightning.callbacks.DeviceStatsMonitor --trainer.callbacks+=pytorch_lightning.callbacks.ModelCheckpoint --trainer.callbacks.monitor=val_loss --trainer.callbacks.filename='{epoch}-{val_loss:.4f}-{val_MAPE:.4f}-{val_R2_avg:.4f}-{val_R2_var_weighted:.4f}'" #--trainer.track_grad_norm 2" 
 lightning_CLI_args="--trainer.num_nodes=$num_nodes --trainer.devices=2 --trainer.accelerator=gpu --trainer.strategy=ddp" # NOTE: everything will be combined later, NOT HERE
 
 echo diagnostic_CLI_args: $diagnostic_CLI_args
