@@ -115,3 +115,8 @@ if __name__=='__main__':
     weights = pd.read_csv(args.CPV_Weight_matrix_path, index_col=0)
     weights.to_csv(f'{out_dir}/weights.csv')
     import adapt_test_targets # this will automatically build/save test targets for use by ablate
+    print('='*50)
+    print('Built Aggregate Regressor using these models: ')
+    for arg_name in ckpt_search_args:
+        print(f'{arg_name}={vars(args)[arg_name]}')
+    print('='*50)
