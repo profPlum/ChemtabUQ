@@ -70,7 +70,7 @@ JOB_CFG="$JOB_CFG --data.scale_output True --data.group_key=null --trainer.bench
 # ---------------------------------------------------------------------------------------------
 # NOTE: LR finder found: --model.learning_rate 1.318e-07 (batch=20000, median over 200 trials)
 # NOTE: LR finder found: --model.learning_rate 1.663e-05 (batch=20000, mean over 200 trials)
-TRAIN_CFG="--model.hidden_size=1000 --data.batch_size=10000 --model.SELU True --trainer.gradient_clip_val 0.25 --model.learning_rate 0.0001445439770745928"
+TRAIN_CFG="--model.hidden_size=500 --data.batch_size=10000 --model.SELU True --trainer.gradient_clip_val 0.25 --model.learning_rate 0.0001445439770745928"
 TRAIN_CFG="$TRAIN_CFG --model.reduce_lr_on_plateu_shedule=True --model.RLoP_patience=100 --model.RLoP_cooldown=20 --model.RLoP_factor=0.95"
 #TRAIN_CFG="$TRAIN_CFG --model.cosine_annealing_lr_schedule=True --model.cos_T_0=60 --model.cos_T_mult=null" # cosine annealing + warm restarts with increasing period
 #TRAIN_CFG="$TRAIN_CFG --model.cosine_annealing_lr_schedule=True --model.cos_T_0=1 --model.cos_T_mult=2" # consine annealing vanilla
