@@ -279,7 +279,7 @@ class UQ_DataModule(pl.LightningDataModule):
         # IMPORTANT: drop_last is needed b/c it prevents unstable training at large batch sizes (e.g. batch_size=100k w/ trunc batch size 40)
         # NOTE: drop last here actually isn't so bad b/c the dataset is shuffled meaning that although an epoch doesn't cover everything, 2 epochs should!!
         self.train_loader = DataLoader(train, batch_size=self.batch_size, num_workers=self.data_workers, shuffle=True, drop_last=True)
-        self.val_loader = DataLoader(val, batch_size=min(self.batch_size, len(val)), num_workers=self.data_workers)
+        self.val_loader = DataLoader(val, batch_size=len(val), num_workers=self.data_workers) # val batch should be big for R^2 to get best estimate of per-variable variance
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return self.train_loader
