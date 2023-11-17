@@ -78,11 +78,11 @@ fit_significant_lm = function(formula, data, significance_level=0.05,
 
 # Accept n_PCs from env variable!
 n_PCs=as.integer(Sys.getenv()['N_CPVS'])
-if (is.na(n_PCs)) n_PCs = 10 # default is 10 which tends to be sufficient
+if (is.na(n_PCs)) n_PCs = 25 # default is 25 which is more than enough, you can cut short by using regex pattern
 cat('N_CPVs: ', n_PCs, '(change via N_CPVS env var)\n')
 
 use_QR=as.logical(Sys.getenv()['QR'])
-if (is.na(use_QR)) use_QR=TRUE
+if (is.na(use_QR)) use_QR=FALSE # the original motivation for QR should be irrelevant now...
 cat('QR: ', use_QR, '(change via QR=T/F env var)\n')
 
 Chemtab_fn = commandArgs(trailingOnly = T)[[1]]
@@ -110,8 +110,13 @@ setwd(dirname(Chemtab_fn))
 
 # NOTE: I've confirmed that using lasso lm although convenient actually gives
 # really bad zmix source term (like 60k at times, despite R^2>0.99), which means it isn't viable...
-train_data = cbind(zmix=Chemtab_data$zmix, mass_frac_data)
+train_data = cbind(zmix=Chemtab_data$zmix, mass_frac_data) |> slice_sample(prop=0.8)
+holdout = Chemtab_data |> anti_join(train_data)
 zmix_lm = fit_significant_lm(zmix~.-1-YiAR, data=train_data)
+preds = predict(zmix_lm, newdata=holdout)
+holdout_R2=R2(holdout$zmix, preds)
+cat('Zmix_lm holdout R^2=', holdout_R2)
+stopifnot(holdout_R2>=0.999)
 stopifnot(summary(zmix_lm)$adj.r.squared>=0.999)
 zmix_coefs= coef(zmix_lm)
 names(zmix_coefs)=gsub('`', '', names(zmix_coefs))
@@ -120,7 +125,9 @@ zmix_coefs[excluded_Yis]=0
 zmix_coefs=zmix_coefs[colnames(mass_frac_data)] # sort
 stopifnot(max(abs(zmix_coefs)) < 50)
 
-export_CPVs_and_rotation = function(use_QR=T) {
+save(zmix_lm, file='zmix_lm.RData')
+
+export_CPVs_and_rotation = function(use_QR=F) {
   # NOTE: ONLY variance weighted PCA makes sense... Because if you apply the scaling matrix then 1 of 2 things
   # happen: either you have: an enormous matrix which is not at all orthonormal (e.g. col norm~=1e20, hence bounds
   # of proof doesn't apply), or you then apply QR which removes the scaling anyhow since it enforces orthonormality. 
