@@ -20,6 +20,34 @@ from pytorch_lightning.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADER
 from pytorch_lightning.callbacks import DeviceStatsMonitor, EarlyStopping
 from pytorch_lightning.utilities import grad_norm # for grad-norm tracking
 
+class R2_robust():
+    """Uses population variance (aka full sample) to avoid problems with sample (aka sub-sample) variance."""
+    def __init__(self, variance_weighted=False, correction=0):
+        """ NOTE: correction=0 gives same behavior as torchmetrics.R2Score() """
+        self.variance_weighted=variance_weighted
+        self.correction=correction
+        self.pop_variance = None
+    def fit(self, Yt_pop):
+        """ Fits R^2 metric to a population/full sample to record accurate variance """
+        self.pop_variance = Yt_pop.var(axis=0, correction=self.correction)
+    def __call__(self, Yp, Yt):
+        """
+        Computes R^2 by relying on (precomputed) population variance estimate.
+        Follows pytorch convention of preds, targets vs Yt, Yp like in TF
+        :param Yp: this is Y_pred as in predicted response values (based on TF naming)
+        :param Yt: this is Y_true as in true response values (based on TF naming)
+        """
+        # NOTE: for unabiased reduce you would do (N/(N-1))*biased, but check if needed!
+        # Not necessary for reduce though because you already have unbiased estimates
+
+        squared_error=(Yt-Yp)**2
+        R2_= 1-(squared_error.sum(axis=0)/(squared_error.shape[0]-self.correction))/self.pop_variance
+        R2_ = (R2_*(self.pop_variance/self.pop_variance.sum())).sum() if self.variance_weighted else R2_.mean()
+        return R2_
+
+r2_robust=R2_robust()
+r2_robust_var_weighted = R2_robust(variance_weighted=True)
+
 # TODO: put inside prepare method for LigthningDataModule! (should only happen once then result saved to disk)
 class UQMomentsDataset(Dataset):
     def __init__(self, csv_fn: str, inputs_like='Yi', outputs_like='souspec', group_key='group',
@@ -133,13 +161,13 @@ class UQErrorPredictionDataset(Dataset):
     
     def __getitem__(self, index):
         (mu, sigma), outputs = self.moments_dataset[index]
-        return  th.cat((mu, sigma), axis=-1), self.SE_model[index]
+        return th.cat((mu, sigma), axis=-1), self.SE_model[index]
 
 class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
                  n_layers: int=8, learning_rate: float=0.0001445439770745928, lr_coef: float=1.0,
                  MAPE_loss: bool=False, sMAPE_loss: bool=False, MSE_loss: bool=False, SELU: bool = True,
-                 reduce_lr_on_plateu_shedule: bool=False, RLoP_patience=100, RLoP_cooldown=20, RLoP_factor=0.9, 
+                 reduce_lr_on_plateu_shedule: bool=False, RLoP_patience=100, RLoP_cooldown=20, RLoP_factor=0.95, 
                  cosine_annealing_lr_schedule: bool=False, cos_T_0: int=60, cos_T_mult: int=1):
         """
         Just a simple FF Network that scales
@@ -221,8 +249,8 @@ class FFRegressor(pl.LightningModule):
         prefix = 'val_' if val_metrics else ''
         self.log(prefix+'MSE',  F.mse_loss(Y_pred, Y), sync_dist=sync_dist)
         self.log(prefix+'MAE', F_metrics.mean_absolute_error(Y_pred, Y), sync_dist=sync_dist)
-        self.log(prefix+'R2_var_weighted', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'),sync_dist=sync_dist)
-        self.log(prefix+'R2_avg', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'),sync_dist=sync_dist)
+        self.log(prefix+'R2_var_weighted', r2_robust_var_weighted(Y_pred, Y),sync_dist=sync_dist) #F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted')
+        self.log(prefix+'R2_avg', r2_robust(Y_pred, Y), sync_dist=sync_dist) # F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average')
         self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
         self.log(prefix+'sMAPE', F_metrics.symmetric_mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)      
  
@@ -267,6 +295,13 @@ class UQ_DataModule(pl.LightningDataModule):
         self.prepare_data_per_node=False
     
     def setup(self, stage=None): # simple version 
+        # NOTE: it is possible to avoid global state but I decided this was worth it for now
+        # fit the R^2 metrics to the dataset so that they work
+        inputs, outputs = self.dataset[:]
+        global r2_robust, r2_robust_var_weighted 
+        r2_robust.fit(outputs)
+        r2_robust_var_weighted.fit(outputs)
+
         assert float('.'.join(th.__version__.split('.')[:2]))>=1.13, 'torch.__version__ must be >= 1.13.0 in order to use random_split portions feature!'        
         if self.split_seed:
             fixed_split_seed = th.Generator().manual_seed(self.split_seed) # IMPORTANT: must be fixed so that this works across processes
