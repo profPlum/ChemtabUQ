@@ -40,6 +40,9 @@ class R2_robust():
         # NOTE: for unabiased reduce you would do (N/(N-1))*biased, but check if needed!
         # Not necessary for reduce though because you already have unbiased estimates
 
+        try: self.pop_variance = self.pop_variance.to(Yt.device)
+        except: None
+
         squared_error=(Yt-Yp)**2
         R2_= 1-(squared_error.sum(axis=0)/(squared_error.shape[0]-self.correction))/self.pop_variance
         R2_ = (R2_*(self.pop_variance/self.pop_variance.sum())).sum() if self.variance_weighted else R2_.mean()
