@@ -167,7 +167,7 @@ def export_CT_model_for_ablate(ckpt_path, add_hard_l1_constraint=False):
 
     output = keras_rep(output)
     if moments_dataset.output_scaler:
-        print('fitting input rescaling layer!')
+        print('fitting output rescaling layer!')
         output_scaling_layer, (m,b) = fit_rescaling_layer(moments_dataset.output_scaler, 
                                                            inverse=True, layer_name='output_rescaling')
         output=output_scaling_layer(output)
