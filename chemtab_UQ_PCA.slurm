@@ -14,8 +14,8 @@
 #SBATCH --nodes=1 # This needs to match Trainer(nodes=...)
 #SBATCH --partition=scavenger #general-compute
 #SBATCH --qos=scavenger #general-compute
-#SBATCH --time=12:00:00
-#SBATCH --job-name="ZmixSource=0-Inv-10_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
+#SBATCH --time=24:00:00
+#SBATCH --job-name="Methane-SS-SousCPV-10_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
 
 # #SBATCH --constraint="V100|P100"
 # #SBATCH --constraint="A100|H100"
@@ -25,6 +25,7 @@
 #python ChemtabUQ.py tune --data.class_path=MeanRegressorDataModule --data.data_fn=~/data/TChem+CPVs+Zmix_MassR2.csv.gz --data.inputs_like=mass_CPV --data.outputs_like=source_CPV_PC --data.scale_output True --trainer.accelerator=gpu --trainer.auto_lr_find True --trainer.auto_scale_batch_size power
 
 source ~/.bash_aliases
+regex_number_range() { x=$(seq $1 $2 | tr '\n' '|'); echo "(?<![0-9eE.-])(?:${x%%|$2|})(?![0-9eE.])"; }
 export NUM_PERTURB_SPREAD=0.2 # we've already got pretty good parameters
 
 #####################################################
@@ -33,19 +34,16 @@ export NUM_PERTURB_SPREAD=0.2 # we've already got pretty good parameters
 #####################################################
 
 # QR datasets:
-#DATA=~/data/TChem+Perturbedx2/5_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
-#DATA=~/data/TChem+Perturbedx2/10_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
 #DATA=~/data/TChem+Perturbedx2/25_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
 
 # NO QR datasets:
-#DATA=~/data/TChem+Perturbedx2/5_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
 #DATA=~/data/TChem+Perturbedx2/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
 #DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
+#DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
 
-DATA=~/data/10_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
+DATA=~/data/ablate_methane_steadystate_collated/TChem+CPVs+Zmix_MassR2.csv.gz
 
-CPV_RANGE_PATTERN=$(regex_number_range 0 10)
-INPUTS=mass_CPV # we OMIT the _PC postfix b/c we want to include zmix in inputs
+N_CPVs=10 # we also want to include zmix in inputs
 #OUTPUTS=Yi
 OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constraints
 #OUTPUTS=souener
@@ -58,9 +56,12 @@ AUTO_PERTURB_ARGS=0 # turn on for auto-hparam search!
 USE_TIMESORTED_SPLIT=1 # Tell job to exclude only the latest part of the simulation
 ####################################################
 
+INPUTS="mass_CPV_(zmix|PC_$(regex_number_range 0 $N_CPVS))"
+echo INPUTS=$INPUTS # Wow it works!
+
 # IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script
-JOB_CFG="$JOB_CFG --data.data_fn=$DATA --data.inputs_like=mass_CPV --data.outputs_like=$OUTPUTS --data.sort_key=time"
+JOB_CFG="$JOB_CFG --data.data_fn=$DATA --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.sort_key=time"
 JOB_CFG="$JOB_CFG --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1 $LOSS"
 # this set of args are relatively constant across experiments or they take args specified elsewhere
 
@@ -70,7 +71,7 @@ JOB_CFG="$JOB_CFG --data.scale_output True --data.group_key=null --trainer.bench
 # ---------------------------------------------------------------------------------------------
 # NOTE: LR finder found: --model.learning_rate 1.318e-07 (batch=20000, median over 200 trials)
 # NOTE: LR finder found: --model.learning_rate 1.663e-05 (batch=20000, mean over 200 trials)
-TRAIN_CFG="--model.hidden_size=500 --data.batch_size=10000 --model.SELU True --trainer.gradient_clip_val 0.25 --model.learning_rate 0.0001445439770745928"
+TRAIN_CFG="--model.hidden_size=500 --data.batch_size=5000 --model.SELU True --trainer.gradient_clip_val 0.25 --model.learning_rate 0.0001445439770745928"
 TRAIN_CFG="$TRAIN_CFG --model.reduce_lr_on_plateu_shedule=True --model.RLoP_patience=100 --model.RLoP_cooldown=20 --model.RLoP_factor=0.95"
 #TRAIN_CFG="$TRAIN_CFG --model.cosine_annealing_lr_schedule=True --model.cos_T_0=60 --model.cos_T_mult=null" # cosine annealing + warm restarts with increasing period
 #TRAIN_CFG="$TRAIN_CFG --model.cosine_annealing_lr_schedule=True --model.cos_T_0=1 --model.cos_T_mult=2" # consine annealing vanilla
