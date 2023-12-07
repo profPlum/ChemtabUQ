@@ -252,13 +252,14 @@ class FFRegressor(pl.LightningModule):
         prefix = 'val_' if val_metrics else ''
         self.log(prefix+'MSE',  F.mse_loss(Y_pred, Y), sync_dist=sync_dist)
         self.log(prefix+'MAE', F_metrics.mean_absolute_error(Y_pred, Y), sync_dist=sync_dist)
-        self.log(prefix+'R2_var_weighted', r2_robust_var_weighted(Y_pred, Y),sync_dist=sync_dist) #F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted')
-        self.log(prefix+'R2_avg', r2_robust(Y_pred, Y), sync_dist=sync_dist) # F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average')
+        self.log(prefix+'R2_avg_sample_var', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'))
+        self.log(prefix+'R2_var_weighted_sample_var', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'))
+        self.log(prefix+'R2_var_weighted', r2_robust_var_weighted(Y_pred, Y),sync_dist=sync_dist)
+        self.log(prefix+'R2_avg', r2_robust(Y_pred, Y), sync_dist=sync_dist)
         self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
         self.log(prefix+'sMAPE', F_metrics.symmetric_mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)      
- 
         if val_metrics: # We are now using val_R2 again b/c we found out that it is more important than MAPE
-           self.log('hp_metric', F_metrics.r2_score(Y_pred, Y),sync_dist=sync_dist)
+           self.log('hp_metric', r2_robust(Y_pred, Y), sync_dist=sync_dist)
  
         loss = self.loss(Y_pred, Y)
         self.log(prefix+'loss', loss, sync_dist=sync_dist)

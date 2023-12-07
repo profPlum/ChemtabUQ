@@ -54,19 +54,25 @@ def make_aggregate_regressor(CPV_source_ckpt: str, souener_ckpt: str, inv_ckpt: 
     tf.keras.utils.plot_model(aggregate_regressor, to_file='aggregate_regressor.png', show_shapes=True, show_dtype=True)
     return aggregate_regressor
 
-# Verified to work 10/11/23
+# Verified to work 12/5/23
 def find_best_ckpt(search_dir):
     ckpts = os.popen(f'find {search_dir} -name "*.ckpt"').read().strip()
-    
+
     if ckpts: ckpts=ckpts.split('\n') # sanity checks...
     else: raise FileNotFoundError('No checkpoints found in search path!')
-    assert all(['val_loss=' in ckpt_i for ckpt_i in ckpts]), 'Checkpoint naming format is incompatible! (must contain val_loss=*)'
+    assert all(['-val_loss=' in ckpt_i for ckpt_i in ckpts]), 'Checkpoint naming format is incompatible! (must contain val_loss=*)'
+    assert all(['-loss=' in ckpt_i for ckpt_i in ckpts]), 'Checkpoint naming format is incompatible! (must contain loss=*)'
+    #contains_train_loss=all(['-loss=' in ckpt_i for ckpt_i in ckpts])
 
     import re
-    get_val_loss = lambda fn: float(re.sub(r"^.*val_loss=([0-9.]+).*$", r"\1", fn))
-    ckpts = sorted(ckpts, key=get_val_loss)
-    print('Sorted ckpts (top 5): \n'+'\n'.join(ckpts[:5])+'\n') 
+    get_loss = lambda fn, prefix='': float(re.sub(r"^.*-{}loss=([0-9.]+).*$".format(prefix), r"\1", fn))
+    get_val_loss = lambda fn: get_loss(fn, prefix='val_')
+    get_worse_loss = lambda fn: max(get_loss(fn), get_val_loss(fn))
+    #if not contains_train_loss: get_worse_loss=get_val_loss
+    ckpts = sorted(ckpts, key=get_worse_loss)
+    print('Sorted ckpts (top 5): \n'+'\n'.join(ckpts[:5])+'\n')
     return ckpts[0]
+
 
 if __name__=='__main__':
     # show candidate checkpoint search paths
