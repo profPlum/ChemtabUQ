@@ -116,9 +116,10 @@ if __name__=='__main__':
     os.system(f'cp {config_path(args.CPV_source_path)} {out_dir}/experiment_records/CPV_source_config.yaml')
     os.system(f'cp {config_path(args.Inverse_path)} {out_dir}/experiment_records/Inverse_config.yaml')
     os.system(f'cp {config_path(args.Souener_path)} {out_dir}/experiment_records/Souener_config.yaml')
- 
+
     import pandas as pd
     weights = pd.read_csv(args.CPV_Weight_matrix_path, index_col=0)
+    weights = weights.iloc[:,:aggregate_regressor.input_shape[1]] # truncate to the number of CPVs used
     weights.to_csv(f'{out_dir}/weights.csv')
     import adapt_test_targets # this will automatically build/save test targets for use by ablate
     print('='*50)
