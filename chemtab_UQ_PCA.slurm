@@ -15,7 +15,8 @@
 #SBATCH --partition=scavenger #general-compute
 #SBATCH --qos=scavenger #general-compute
 #SBATCH --time=24:00:00
-#SBATCH --job-name="Methane-SS-SousCPV-10_CPVs" # sort by information entropy, e.g. CT tells us nothing, MAPE or Souener tells us a lot
+#SBATCH --job-name="Methane-SS-Inv-10_CPVs" 
+## sort by information entropy
 
 # #SBATCH --constraint="V100|P100"
 # #SBATCH --constraint="A100|H100"
@@ -40,13 +41,16 @@ export NUM_PERTURB_SPREAD=0.2 # we've already got pretty good parameters
 #DATA=~/data/TChem+Perturbedx2/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
 #DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
 #DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
+#DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2_short.csv.gz
 
 DATA=~/data/ablate_methane_steadystate_collated/TChem+CPVs+Zmix_MassR2.csv.gz
 
-N_CPVs=10 # we also want to include zmix in inputs
-#OUTPUTS=Yi
-OUTPUTS=source_CPV_PC # we INCLUDE the _PC postflix b/c zmix_source=0 by constraints
+N_CPVS=10 # we also want to include zmix in inputs
+VALID_CPV_RANGE="$(regex_number_range 0 $N_CPVS)"
+INPUTS="mass_CPV_(zmix|PC_$VALID_CPV_RANGE)"
+#OUTPUTS="source_CPV_PC_$VALID_CPV_RANGE" # we exclude zmix b/c zmix_source=0 by constraints
 #OUTPUTS=souener
+OUTPUTS=Yi
 #LOSS='--model.MAPE_loss True'
 #LOSS='--model.sMAPE_loss True'
 #LOSS='--model.MSE_loss True'
@@ -56,8 +60,8 @@ AUTO_PERTURB_ARGS=0 # turn on for auto-hparam search!
 USE_TIMESORTED_SPLIT=1 # Tell job to exclude only the latest part of the simulation
 ####################################################
 
-INPUTS="mass_CPV_(zmix|PC_$(regex_number_range 0 $N_CPVS))"
 echo INPUTS=$INPUTS # Wow it works!
+echo OUTPUTS=$OUTPUTS
 
 # IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script
@@ -71,7 +75,8 @@ JOB_CFG="$JOB_CFG --data.scale_output True --data.group_key=null --trainer.bench
 # ---------------------------------------------------------------------------------------------
 # NOTE: LR finder found: --model.learning_rate 1.318e-07 (batch=20000, median over 200 trials)
 # NOTE: LR finder found: --model.learning_rate 1.663e-05 (batch=20000, mean over 200 trials)
-TRAIN_CFG="--model.hidden_size=500 --data.batch_size=5000 --model.SELU True --trainer.gradient_clip_val 0.25 --model.learning_rate 0.0001445439770745928"
+# NOTE: set gradient_clip_val=null to disable it! (default is 0.25)
+TRAIN_CFG="--model.hidden_size=500 --data.batch_size=10000 --model.SELU True --trainer.gradient_clip_val=0.25 --model.learning_rate 0.0001445439770745928"
 TRAIN_CFG="$TRAIN_CFG --model.reduce_lr_on_plateu_shedule=True --model.RLoP_patience=100 --model.RLoP_cooldown=20 --model.RLoP_factor=0.95"
 #TRAIN_CFG="$TRAIN_CFG --model.cosine_annealing_lr_schedule=True --model.cos_T_0=60 --model.cos_T_mult=null" # cosine annealing + warm restarts with increasing period
 #TRAIN_CFG="$TRAIN_CFG --model.cosine_annealing_lr_schedule=True --model.cos_T_0=1 --model.cos_T_mult=2" # consine annealing vanilla
