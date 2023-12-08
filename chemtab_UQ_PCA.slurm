@@ -41,7 +41,6 @@ export NUM_PERTURB_SPREAD=0.2 # we've already got pretty good parameters
 #DATA=~/data/TChem+Perturbedx2/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
 #DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
 #DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
-#DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2_short.csv.gz
 
 DATA=~/data/ablate_methane_steadystate_collated/TChem+CPVs+Zmix_MassR2.csv.gz
 
@@ -55,9 +54,14 @@ OUTPUTS=Yi
 #LOSS='--model.sMAPE_loss True'
 #LOSS='--model.MSE_loss True'
 AUTO_PERTURB_ARGS=0 # turn on for auto-hparam search!
-#RESUME=1 # Tell job stub to load last ckpts from this experiment
-#USE_BEST_SEED=1 # Tell job to use the best known split seed
+RESUME=1 # Tell job stub to load last ckpts from this experiment
 USE_TIMESORTED_SPLIT=1 # Tell job to exclude only the latest part of the simulation
+#USE_BEST_SEED=1 # Tell job to use the best known split seed
+
+#touch CT_logs_Mu/Methane-SS-Inv-10_CPVs/version_14345154 # batch_size=5000 (1st best)
+#touch CT_logs_Mu/Methane-SS-Inv-10_CPVs/version_14361329 # batch_size=1752 (2nd best)
+#touch CT_logs_Mu/Methane-SS-Inv-10_CPVs/version_14361326 # batch_size=876 (3rd best)
+
 ####################################################
 
 echo INPUTS=$INPUTS # Wow it works!
@@ -121,7 +125,7 @@ fi
 #MEAN_ONLY=0 # Turn on UQ
 MEAN_ONLY=1 # Turn off UQ for now
 JOB_CFG="$TRAIN_CFG $JOB_CFG" #--ckpt_path=last" # last isn't supported, it appears it doesn't work 
-((RESUME)) && JOB_CFG= # if RESUME==1 we don't want to mess with existing settings
 EXTRA_PL_ARGS="$JOB_CFG $EXTRA_PL_ARGS" # inject manually specified user arguments (with priority over job cfg)
+((RESUME)) && EXTRA_PL_ARGS= # if RESUME==1 we don't want to mess with existing settings
 
 . chemtab_UQ_job_stub.sh
