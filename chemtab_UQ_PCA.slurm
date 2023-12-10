@@ -2,8 +2,6 @@
 #
 #SBATCH --output=slurm_logs/R-%x.%j.out
 #SBATCH --error=slurm_logs/R-%x.%j.err
-#SBATCH --mail-user=dwyerdei@buffalo.edu
-#SBATCH --mail-type=end
 #SBATCH --cluster=ub-hpc
 #SBATCH --threads-per-core=1  # do not use hyperthreads (i.e. CPUs = physical cores below)
 #SBATCH --cpus-per-task=5     # number of CPUs per process (we want extra for data loaders)
