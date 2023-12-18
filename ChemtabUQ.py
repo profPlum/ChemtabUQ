@@ -25,11 +25,11 @@ class R2_robust():
     def __init__(self, variance_weighted=False, correction=0):
         """ NOTE: correction=0 gives same behavior as torchmetrics.R2Score() """
         self.variance_weighted=variance_weighted
-        self.correction=correction
+        self._correction=correction
         self.pop_variance = None
     def fit(self, Yt_pop):
         """ Fits R^2 metric to a population/full sample to record accurate variance """
-        self.pop_variance = Yt_pop.var(axis=0, correction=self.correction)
+        self.pop_variance = Yt_pop.var(axis=0, correction=self._correction)
     def __call__(self, Yp, Yt):
         """
         Computes R^2 by relying on (precomputed) population variance estimate.
@@ -44,7 +44,7 @@ class R2_robust():
         except: None
 
         squared_error=(Yt-Yp)**2
-        R2_= 1-(squared_error.sum(axis=0)/(squared_error.shape[0]-self.correction))/self.pop_variance
+        R2_= 1-(squared_error.sum(axis=0)/(squared_error.shape[0]-self._correction))/self.pop_variance
         R2_ = (R2_*(self.pop_variance/self.pop_variance.sum())).sum() if self.variance_weighted else R2_.mean()
         return R2_
 
@@ -173,7 +173,7 @@ class FFRegressor(pl.LightningModule):
                  reduce_lr_on_plateu_shedule: bool=False, RLoP_patience=100, RLoP_cooldown=20, RLoP_factor=0.95, 
                  cosine_annealing_lr_schedule: bool=False, cos_T_0: int=60, cos_T_mult: int=1):
         """
-        Just a simple FF Network that scales
+        Just a simple FF Network (aka MLP) that scales
 
         :param input_size: NN input size
         :param output_size: NN output size
@@ -185,6 +185,13 @@ class FFRegressor(pl.LightningModule):
         :param sMAPE_loss: (experimental) use sMAPE as a loss function
         :param MSE_loss: use MSE as loss function
         :param SELU: uses SELU activation & initialization for normalized acivations (better than batch norm)
+        :param reduce_lr_on_plateu_shedule: use LR schedule that reduces lr on plateu
+        :param RLoP_patience: patience between LR decreases with reduce_lr_on_plateu_shedule
+        :param RLoP_cooldown: cooldown between active usage of reduce_lr_on_plateu_shedule
+        :param RLoP_factor: reduction factor for reduce_lr_on_plateu_shedule
+        :param cosine_annealing_lr_schedule: use cyclic LR schedule
+        :param cos_T_0: cosine_annealing_lr_schedule LR period
+        :param cos_T_mult: period multiplication factor after each period
         """
         super().__init__()
 
@@ -195,7 +202,7 @@ class FFRegressor(pl.LightningModule):
 
         self.loss = F.l1_loss # MAE is default loss
         if MSE_loss: self.loss = F.mse_loss 
-        elif MAPE_loss: self.loss=F_metrics.mean_absolute_percentage_error #MeanAbsolutePercentageError()
+        elif MAPE_loss: self.loss=F_metrics.mean_absolute_percentage_error
         elif sMAPE_loss: self.loss=F_metrics.symmetric_mean_absolute_percentage_error
         assert MSE_loss + MAPE_loss + sMAPE_loss <= 1 # all loss flags are mutually exclusive 
 
@@ -324,6 +331,9 @@ class UQ_DataModule(pl.LightningDataModule):
         return self.train_loader
     
     def val_dataloader(self) -> EVAL_DATALOADERS:
+        return self.val_loader
+
+    def test_dataloader(self) -> EVAL_DATALOADERS:
         return self.val_loader
 
 ################### Specialized Data Modules for Mean & UQ Regressors: ###################

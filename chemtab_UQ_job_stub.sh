@@ -49,6 +49,7 @@ if ((RESUME)); then
     # NOTE: for resume we should exclude $diagnostic_CLI_args & $EXTRA_PL_ARGS!!
     if [[ "$EXTRA_PL_ARGS" ]]; then
         echo Error! EXTRA_PL_ARGS must be empty in order to resume properly!! >&2
+        echo EXTRA_PL_ARGS=$EXTRA_PL_ARGS
         return 2 || exit 2
     else
         diagnostic_CLI_args= # we don't want to pass unnecesary arguments
