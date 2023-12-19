@@ -45,8 +45,11 @@ class R2_robust():
 
         squared_error=(Yt-Yp)**2
         R2_= 1-(squared_error.sum(axis=0)/(squared_error.shape[0]-self._correction))/self.pop_variance
-        R2_ = (R2_*(self.pop_variance/self.pop_variance.sum())).sum() if self.variance_weighted else R2_.mean()
-        return R2_
+        if self.variance_weighted:
+            R2_[self.pop_variance==0]=0 # set NaN's to 0 to since their weight is 0 anyways!
+            R2_=(R2_*(self.pop_variance/self.pop_variance.sum())).sum()
+        else: R2_=R2_.mean()
+        return R2_ 
 
 r2_robust=R2_robust()
 r2_robust_var_weighted = R2_robust(variance_weighted=True)
