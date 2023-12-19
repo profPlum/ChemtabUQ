@@ -89,12 +89,16 @@ if __name__=='__main__':
     #print('='*100+'\n'+'='*100+'\n')
 
     parser = argparse.ArgumentParser(description='Packages/aggregates V2 CT models for ablate.')
+    parser.add_argument('--CPV_Weight_matrix_path', type=str, required=True, help='path to the W-matrix csv (the matrix used to compress Yis to CPVs)')
     parser.add_argument('--CPV_source_path', type=str, required=True, help='path to checkpoint *search_directory* of V2 CPV_source model')
     parser.add_argument('--Souener_path', type=str, required=True, help='path to checkpoint *search_directory* of V2 Souener model')
-    parser.add_argument('--Inverse_path', type=str, required=True, help='path to checkpoint *search_directory* of V2 Inverse model')
-    parser.add_argument('--CPV_Weight_matrix_path', type=str, required=True, help='path to the W-matrix csv (the matrix used to compress Yis to CPVs)')
+    parser.add_argument('--Inverse_path', type=str, default=None, help='path to checkpoint *search_directory* of V2 Inverse model (only leave blank if --Identity_Inverse is given)')
+    parser.add_argument('--Identity_Inverse', action='store_true', help='Special option to use the identity function as the inverse model')
     args = parser.parse_args()
- 
+
+    if args.Inverse_path is None and not args.Identity_Inverse:
+        raise ValueError('Either --Inverse_path or --Identity_Inverse MUST be given via CLI')
+
     # IMPORTANT: MUST MATCH the 'model_name' variable in adapt_test_targets.py!!
     out_dir = 'PCDNNV2_decomp' # (advised not to change from PCDNNV2_decomp) 
     os.system('rm -r PCDNNV2_decomp 2> /dev/null') 
@@ -103,9 +107,10 @@ if __name__=='__main__':
     # search for checkpoints inside the search paths
     ckpt_search_args=['CPV_source_path', 'Souener_path', 'Inverse_path']
     for arg_name in ckpt_search_args:
-        print(f'searching for {arg_name} checkpoint:') # we test prepending 'CT_logs_Mu/' for brevity
-        try: vars(args)[arg_name]=find_best_ckpt('CT_logs_Mu/'+vars(args)[arg_name])
-        except FileNotFoundError: vars(args)[arg_name]=find_best_ckpt(vars(args)[arg_name])
+        if vars(args)[arg_name]: # can be valid to skip Inverse_path with --Identity_Inverse
+            print(f'searching for {arg_name} checkpoint:') # we test prepending 'CT_logs_Mu/' for brevity
+            try: vars(args)[arg_name]=find_best_ckpt('CT_logs_Mu/'+vars(args)[arg_name])
+            except FileNotFoundError: vars(args)[arg_name]=find_best_ckpt(vars(args)[arg_name])
     
     aggregate_regressor = make_aggregate_regressor(args.CPV_source_path, args.Souener_path, args.Inverse_path)
     os.system(f'mkdir -p {out_dir}/experiment_records') # for config.yaml files

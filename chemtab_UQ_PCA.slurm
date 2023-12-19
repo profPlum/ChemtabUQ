@@ -10,10 +10,10 @@
 #SBATCH --ntasks-per-node=2   # This needs to match Trainer(devices=...), Also: it seems that GPU nodes have only 2 GPUs per node anyways...
 #SBATCH --mem=25G
 #SBATCH --nodes=1 # This needs to match Trainer(nodes=...)
-#SBATCH --partition=scavenger #general-compute
-#SBATCH --qos=scavenger #general-compute
+#SBATCH --partition=general-compute #scavenger #general-compute
+#SBATCH --qos=general-compute #scavenger #general-compute
 #SBATCH --time=24:00:00
-#SBATCH --job-name="Methane-SS-Inv-10_CPVs" 
+#SBATCH --job-name="Souener-Identity-CPVs" 
 ## sort by information entropy
 
 # #SBATCH --constraint="V100|P100"
@@ -36,29 +36,26 @@ export NUM_PERTURB_SPREAD=0.2 # we've already got pretty good parameters
 #DATA=~/data/TChem+Perturbedx2/25_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
 
 # NO QR datasets:
-#DATA=~/data/TChem+Perturbedx2/10_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
-#DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
+#DATA=~/data/TChem+Perturbedx2/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
+DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
 #DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
 
-DATA=~/data/ablate_methane_steadystate_collated/TChem+CPVs+Zmix_MassR2.csv.gz
+#DATA=~/data/ablate_methane_steadystate_collated/TChem+CPVs+Zmix_MassR2.csv.gz
+#DATA=~/data/TC_methane_SS++_collated/TChem+CPVs+Zmix_MassR2.csv.gz
 
-N_CPVS=10 # we also want to include zmix in inputs
-VALID_CPV_RANGE="$(regex_number_range 0 $N_CPVS)"
+#N_CPVS=10 # we also want to include zmix in inputs
+#VALID_CPV_RANGE="$(regex_number_range 0 $N_CPVS)"
 INPUTS="mass_CPV_(zmix|PC_$VALID_CPV_RANGE)"
 #OUTPUTS="source_CPV_PC_$VALID_CPV_RANGE" # we exclude zmix b/c zmix_source=0 by constraints
 #OUTPUTS=souener
-OUTPUTS=Yi
+OUTPUTS=^Yi
 #LOSS='--model.MAPE_loss True'
 #LOSS='--model.sMAPE_loss True'
 #LOSS='--model.MSE_loss True'
 AUTO_PERTURB_ARGS=0 # turn on for auto-hparam search!
-RESUME=1 # Tell job stub to load last ckpts from this experiment
+RESUME=0 # Tell job stub to load last ckpts from this experiment
 USE_TIMESORTED_SPLIT=1 # Tell job to exclude only the latest part of the simulation
 #USE_BEST_SEED=1 # Tell job to use the best known split seed
-
-#touch CT_logs_Mu/Methane-SS-Inv-10_CPVs/version_14345154 # batch_size=5000 (1st best)
-#touch CT_logs_Mu/Methane-SS-Inv-10_CPVs/version_14361329 # batch_size=1752 (2nd best)
-#touch CT_logs_Mu/Methane-SS-Inv-10_CPVs/version_14361326 # batch_size=876 (3rd best)
 
 ####################################################
 
@@ -69,6 +66,7 @@ echo OUTPUTS=$OUTPUTS
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script
 JOB_CFG="$JOB_CFG --data.data_fn=$DATA --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.sort_key=time"
 JOB_CFG="$JOB_CFG --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1 $LOSS"
+#JOB_CFG="$JOB_CFG --data.scale_output False --model.n_layers=1 --model.SELU False --trainer.max_epochs=1000" # Identity Inverse Model setup
 # this set of args are relatively constant across experiments or they take args specified elsewhere
 
 # NOTE: LR finder found: --model.learning_rate 0.0001445439770745928 (big batch=200k)
@@ -126,4 +124,4 @@ JOB_CFG="$TRAIN_CFG $JOB_CFG" #--ckpt_path=last" # last isn't supported, it appe
 EXTRA_PL_ARGS="$JOB_CFG $EXTRA_PL_ARGS" # inject manually specified user arguments (with priority over job cfg)
 ((RESUME)) && EXTRA_PL_ARGS= # if RESUME==1 we don't want to mess with existing settings
 
-. chemtab_UQ_job_stub.sh
+source chemtab_UQ_job_stub.sh
