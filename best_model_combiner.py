@@ -37,7 +37,7 @@ def make_aggregate_regressor(CPV_source_ckpt: str, souener_ckpt: str, inv_ckpt: 
  
     assert Souener_model.output_shape[1]==1, 'invalid souener model!'
     assert CPV_source_model.input_shape[1]==CPV_source_model.output_shape[1]+1, 'invalid CPV_Source model!'
-    assert Inv_model.input_shape[1]<Inv_model.output_shape[1], 'invalid inverse model!'
+    assert Inv_model.input_shape[1]<=Inv_model.output_shape[1]+1, 'invalid inverse model!' # +1 for Zmix w/ Identity
     assert CPV_source_model.input_shape==Souener_model.input_shape==Inv_model.input_shape, 'incompatible models!'
 
     input_=L.Input(shape=CPV_source_model.input_shape[1:], name='input_1')
@@ -72,7 +72,6 @@ def find_best_ckpt(search_dir):
     ckpts = sorted(ckpts, key=get_worse_loss)
     print('Sorted ckpts (top 5): \n'+'\n'.join(ckpts[:5])+'\n')
     return ckpts[0]
-
 
 if __name__=='__main__':
     # show candidate checkpoint search paths
