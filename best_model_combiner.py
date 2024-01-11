@@ -19,6 +19,18 @@ def inspect_outputs(outputs, model_name: str):
     plt.title(f'Souener-{model_name}_outputs')
     plt.show()
 
+# verified to work 12/18/23
+def make_identity_model(size, skip_inputs=0, add_hard_l1_constraint=False):
+    """ makes identity keras model for identity inverse """
+    input_ = keras.layers.Input(shape=(size,))
+    output = input_[:, skip_inputs:]
+    if add_hard_l1_constraint:
+        import ONNX_export
+        output=ONNX_export.add_unit_L1_layer_constraint(output, first_n_preserved=0)
+    model = keras.models.Model(inputs=input_, outputs=output)
+    model.compile()
+    return model
+
 # verified to work! 9/20/23
 def make_aggregate_regressor(CPV_source_ckpt: str, souener_ckpt: str, inv_ckpt: str):
     """ makes aggregate regressor with the same interfaces as CT V1 from individual models given from CT V2"""
@@ -29,12 +41,16 @@ def make_aggregate_regressor(CPV_source_ckpt: str, souener_ckpt: str, inv_ckpt: 
     import ONNX_export
     CPV_source_model = ONNX_export.export_CT_model_for_ablate(CPV_source_ckpt)
     Souener_model = ONNX_export.export_CT_model_for_ablate(souener_ckpt)
-    Inv_model = ONNX_export.export_CT_model_for_ablate(inv_ckpt, add_hard_l1_constraint=True)
-    # hard_l1_constraint is needed for Inv model only due to constraints on Yis
    
     input_shape = CPV_source_model.input_shape[1:]
     print('input_shape: ', input_shape)
  
+    if inv_ckpt is not None: # hard_l1_constraint is needed for Inv model only due to constraints on Yis 
+        Inv_model = ONNX_export.export_CT_model_for_ablate(inv_ckpt, add_hard_l1_constraint=True)
+    else:
+        assert len(input_shape)==1
+        Inv_model = make_identity_model(size=input_shape[0], skip_inputs=1, add_hard_l1_constraint=True)
+
     assert Souener_model.output_shape[1]==1, 'invalid souener model!'
     assert CPV_source_model.input_shape[1]==CPV_source_model.output_shape[1]+1, 'invalid CPV_Source model!'
     assert Inv_model.input_shape[1]<=Inv_model.output_shape[1]+1, 'invalid inverse model!' # +1 for Zmix w/ Identity
@@ -89,11 +105,11 @@ if __name__=='__main__':
     #print('='*100+'\n'+'='*100+'\n')
 
     parser = argparse.ArgumentParser(description='Packages/aggregates V2 CT models for ablate.')
-    parser.add_argument('--CPV_Weight_matrix_path', type=str, required=True, help='path to the W-matrix csv (the matrix used to compress Yis to CPVs)')
     parser.add_argument('--CPV_source_path', type=str, required=True, help='path to checkpoint *search_directory* of V2 CPV_source model')
     parser.add_argument('--Souener_path', type=str, required=True, help='path to checkpoint *search_directory* of V2 Souener model')
     parser.add_argument('--Inverse_path', type=str, default=None, help='path to checkpoint *search_directory* of V2 Inverse model (only leave blank if --Identity_Inverse is given)')
     parser.add_argument('--Identity_Inverse', action='store_true', help='Special option to use the identity function as the inverse model')
+    parser.add_argument('--CPV_Weight_matrix_path', type=str, required=True, help='path to the W-matrix csv (the matrix used to compress Yis to CPVs)')
     args = parser.parse_args()
 
     if args.Inverse_path is None and not args.Identity_Inverse:
@@ -118,9 +134,9 @@ if __name__=='__main__':
  
     config_path = lambda ckpt_path: os.path.dirname(ckpt_path) + '/../config.yaml'
     os.system(f'cp {config_path(args.CPV_source_path)} {out_dir}/experiment_records/CPV_source_config.yaml')
-    os.system(f'cp {config_path(args.Inverse_path)} {out_dir}/experiment_records/Inverse_config.yaml')
     os.system(f'cp {config_path(args.Souener_path)} {out_dir}/experiment_records/Souener_config.yaml')
-
+    if args.Inverse_path: os.system(f'cp {config_path(args.Inverse_path)} {out_dir}/experiment_records/Inverse_config.yaml')
+    
     import pandas as pd
     weights = pd.read_csv(args.CPV_Weight_matrix_path, index_col=0)
     weights = weights.iloc[:,:aggregate_regressor.input_shape[1]] # truncate to the number of CPVs used
