@@ -60,8 +60,7 @@ if ((RESUME)); then
         echo $last_checkpoint
     }
 
-    # NOTE: this works for BOTH Sigma & Mean models b/c we use --trainer.default_root_dir which these checkpoint paths will implicitly be relative to!
-    cd CT_logs_Mu
+    cd CT_logs_Mu # NOTE: this works for BOTH CT_logs_Mu & CT_logs_Sigma models b/c they have the same relative path structure
     echo SLURM_JOB_NAME: $SLURM_JOB_NAME
     last_checkpoint=$(find_last_ckpt ./$SLURM_JOB_NAME/)
     last_cfg=$(dirname $last_checkpoint)/../config.yaml # config loads hyper-parameter settings
@@ -103,8 +102,6 @@ if ((! MEAN_ONLY)); then
     srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=UQRegressorDataModule --data.mean_regressor_fn=~/ChemtabUQ/CT_logs_Mu/mean_regressors/model-${SLURM_JOB_ID}.ckpt $lightning_CLI_args #--trainer.default_root_dir=CT_logs_Sigma 
 	mkdir UQ_regressors 2> /dev/null
     mv model.ckpt UQ_regressors/model-${SLURM_JOB_ID}.ckpt
-else
-	rm -r UQ_regressor 2> /dev/null
 fi
 cd -
 
