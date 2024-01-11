@@ -81,6 +81,13 @@ class UQMomentsDataset(Dataset):
             group_key='group'
             df['group']=df.index
             print('no grouping!')
+        #else:
+        #    # filter only valid groups, so we can use unbiased estimator
+        #    numeric_df = df.select_dtypes(include='number')
+        #    valid_groups = df.filter(items=list(numeric_df.columns[:2])+[group_key]).groupby(group_key).std(ddof=1).dropna().reset_index()[group_key]
+        #    mask = df[group_key].isin(valid_groups)
+        #    df = df[df[group_key].isin(valid_groups)] # mask out groups with only 1 element  
+        #    assert not self.df.isna().any()
 
         def filter_and_scale(like, scale: bool):
             scaler = None
@@ -118,7 +125,6 @@ class UQMomentsDataset(Dataset):
         return self.df_mu.shape[0]
 
     def __getitem__(self, idx):
-        #inputs = th.randn((self.df_mu.shape[1]),)*self.df_sigma[idx,:] + self.df_mu[idx,:]
         outputs = self.outs_df[idx,:]
         return (self.df_mu[idx,:], self.df_sigma[idx,:]), outputs
 
@@ -142,7 +148,7 @@ class UQSamplesDataset(Dataset):
 # NOTE: this takes MULTIPLE samples per distribution then get the SE for the entire distribution & save that as training target!
 # you can do this partially by using split-apply-combine with pandas
 class UQErrorPredictionDataset(Dataset):
-    def __init__(self, target_model: nn.Module, moments_dataset: UQMomentsDataset, samples_per_distribution=50):
+    def __init__(self, target_model: nn.Module, moments_dataset: UQMomentsDataset, samples_per_distribution=1000, **kwargs):
         self.target_model = target_model
         self.moments_dataset = moments_dataset
         self.sampling_dataset = UQSamplesDataset(moments_dataset)
@@ -166,11 +172,12 @@ class UQErrorPredictionDataset(Dataset):
         return len(self.moments_dataset)
     
     def __getitem__(self, index):
+        # TODO: consider moving the sampling procedure here for lazy eval in DataLoader workers...
         (mu, sigma), outputs = self.moments_dataset[index]
         return th.cat((mu, sigma), axis=-1), self.SE_model[index]
 
 class FFRegressor(pl.LightningModule):
-    def __init__(self, input_size: int, output_size: int=None, hidden_size: int=100,
+    def __init__(self, input_size: int, output_size: int=None, hidden_size: int=250,
                  n_layers: int=8, learning_rate: float=0.0001445439770745928, lr_coef: float=1.0,
                  MAPE_loss: bool=False, sMAPE_loss: bool=False, MSE_loss: bool=False, SELU: bool = True,
                  reduce_lr_on_plateu_shedule: bool=False, RLoP_patience=100, RLoP_cooldown=20, RLoP_factor=0.95, 
@@ -261,13 +268,15 @@ class FFRegressor(pl.LightningModule):
         """ computes/logs metrics & loss for one step """
         prefix = 'val_' if val_metrics else ''
         self.log(prefix+'MSE',  F.mse_loss(Y_pred, Y), sync_dist=sync_dist)
+        mae = F_metrics.mean_absolute_error(Y_pred, Y)
+
         self.log(prefix+'MAE', F_metrics.mean_absolute_error(Y_pred, Y), sync_dist=sync_dist)
-        self.log(prefix+'R2_avg_sample_var', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'))
-        self.log(prefix+'R2_var_weighted_sample_var', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'))
-        self.log(prefix+'R2_var_weighted', r2_robust_var_weighted(Y_pred, Y),sync_dist=sync_dist)
+        self.log(prefix+'R2_avg_sample_var', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'), sync_dist=sync_dist)
+        self.log(prefix+'R2_var_weighted_sample_var', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'), sync_dist=sync_dist)
+        self.log(prefix+'R2_var_weighted', r2_robust_var_weighted(Y_pred, Y), sync_dist=sync_dist)
         self.log(prefix+'R2_avg', r2_robust(Y_pred, Y), sync_dist=sync_dist)
-        self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)
-        self.log(prefix+'sMAPE', F_metrics.symmetric_mean_absolute_percentage_error(Y_pred, Y),sync_dist=sync_dist)      
+        self.log(prefix+'MAPE', F_metrics.mean_absolute_percentage_error(Y_pred, Y), sync_dist=sync_dist)
+        self.log(prefix+'sMAPE', F_metrics.symmetric_mean_absolute_percentage_error(Y_pred, Y), sync_dist=sync_dist)      
         if val_metrics: # We are now using val_R2 again b/c we found out that it is more important than MAPE
            self.log('hp_metric', r2_robust(Y_pred, Y), sync_dist=sync_dist)
  
@@ -289,7 +298,6 @@ class FFRegressor(pl.LightningModule):
 
 # TODO: should do moments preprocessing in the prep function stage then save the file to pickle with hash based on arguments & reload later
 # doubly important since we are seperating the mean regressor fitting from the UQ model fitting!
-# Lol I just crammed the previous functions into this class... I think it should work fine though?
 class UQ_DataModule(pl.LightningDataModule):
     def __init__(self, dataset: Dataset, batch_size: int=10000, train_portion: float=0.8, 
                  data_workers: int=4, split_seed: int=29, **kwd_args):
@@ -309,8 +317,9 @@ class UQ_DataModule(pl.LightningDataModule):
         self.prepare_data_per_node=False
     
     def setup(self, stage=None): # simple version 
-        # NOTE: it is possible to avoid global state but I decided this was worth it for now
         # fit the R^2 metrics to the dataset so that they work
+        # TODO: actually it is possible to elegantly avoid global state, 
+        # just make linked dataset & model args to pass pop variance (like you've already done!)
         inputs, outputs = self.dataset[:]
         global r2_robust, r2_robust_var_weighted 
         r2_robust.fit(outputs)
@@ -373,7 +382,7 @@ class UQRegressorDataModule(UQ_DataModule):
         (mu, sigma), outs = random.choice(moments_dataset)
 
         mean_regressor = load_mean_regressor_factory(mean_regressor_fn, moments_dataset.input_col_names)
-        regressor_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset)
+        regressor_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset, **kwargs)
         super().__init__(regressor_dataset, **kwargs)
 
 #########################################################################
