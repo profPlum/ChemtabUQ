@@ -1,6 +1,7 @@
 from ChemtabUQ import *
 
-sample_from_uncertainty=True
+# whether to drive the UQ with monte-carlo-UP or variance surrogate
+monte_carlo_var_estimates=False
 
 df_fn = './data/chrest_contiguous_group_sample100k.csv' # TODO: configure from the CLI
 moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspec', group_key='group')
@@ -8,17 +9,19 @@ moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspe
 import random
 
 # get ICs
-#(mu, sigma), outs = random.choice(moments_dataset)
-while True: # why is it that moderate O2 still give us steady state behavior? 
-	(mu, sigma), outs = random.choice(moments_dataset)
-	if 0.5<mu[3]<0.8: break # check O2 isn't too high
-Yi_state=mu.reshape(1,-1) + th.randn(*sigma.shape)*sample_from_uncertainty*0.05
+(mu, sigma), outs = random.choice(moments_dataset)
+#while True: # why is it that moderate O2 still give us steady state behavior? 
+#	(mu, sigma), outs = random.choice(moments_dataset)
+#	if 0.5<mu[3]<0.8: break # check O2 isn't too high
+
+Yi_state=mu.reshape(1,-1) #+ th.randn(*sigma.shape)*sample_from_uncertainty*0.05
 Yi_var=(sigma**2).reshape(1,-1)
 
 n_Yi = mu.shape[0]
 assert n_Yi == 53
 
-# TODO: have it be configurable from the CLI which mean regressor to load!
+# NOTE: right now mean regressor must either be the TF exported aggergregate model or model that directly predicted Yi sources from Yis (i.e. FOM surrogate)
+# TODO: change the mean regressor to be either of the required model types (right now it'd be neither!)
 mean_regressor = load_mean_regressor_factory('mean_regressor.ckpt', moments_dataset.input_col_names)
 std_regressor = FFRegressor.load_from_checkpoint('std_regressor.ckpt', input_size=n_Yi*2, output_size=n_Yi).cpu()
 
@@ -47,14 +50,24 @@ def constrain_state(Yi_state):
 	Yi_state /= Yi_state.sum()
 	return Yi_state
 
+def MC_UP_std_estimate(mean_regressor, Yi_state, Yi_var, n_samples=1000):
+    Yi_dots=mean_regressor(Yi_state+th.randn(list(Yi_state.shape)+[n_samples])*Yi_var**0.5).detach()
+    print('Doing forward UQ with biased std estimates! Ensure this is also what ChemtabUQ.py does!')
+    return Yi_dots.std(dim=-1, correction=0)
+
+    
 import warnings
 warnings.simplefilter("ignore")
 for i in range(n_time_steps*step_multiplier):
-	Yi_dot = mean_regressor(Yi_state).detach()
-	Yi_state += Yi_dot*dt
+    # scale the SE by the dt coef then convert to variance for VAR(X+Y)=VAR(X)+VAR(Y)
+    if monte_carlo_var_estimates:
+        Yi_var += (MC_UP_std_estimate(mean_regressor, Yi_state, Yi_var)*dt)**2
+    else:
+        Yi_var += (std_regressor(th.cat([Yi_state, Yi_var**0.5],axis=1)).detach()*dt)**2 
+        # NOTE: as of 1/10/24 std_regressor takes std rather than variance as input!
 
-	# scale the SE by the dt coef then convert to variance for VAR(X+Y)=VAR(X)+VAR(Y)
-	Yi_var += (std_regressor(th.cat([Yi_state, Yi_var],axis=1)).detach()*dt)**2
+    Yi_dot = mean_regressor(Yi_state).detach()
+    Yi_state += Yi_dot*dt
 
 	if i%step_multiplier==0: # log interval is determined by original steps
 		Yi_state_pd = Yi_state.numpy()
