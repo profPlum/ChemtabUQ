@@ -73,7 +73,7 @@ class UQMomentsDataset(Dataset):
         col_load_predicate=lambda col_name: col_name in [group_key,sort_key] \
             or re.search(inputs_like, col_name) or re.search(outputs_like, col_name)
         df = pd.read_csv(csv_fn, usecols=col_load_predicate)
-        print('original df len: ', len(df))
+        print('original df len: ', len(df), flush=True)
 
         if sort_key:
             df=df.sort_values(by=sort_key)
@@ -101,10 +101,12 @@ class UQMomentsDataset(Dataset):
             subset_df.index = df[group_key]
             return subset_df, scaler
 
+        print('doing filter and scale', flush=True)
         inputs_df, self.input_scaler = filter_and_scale(inputs_like, scale=False)
         outs_df, self.output_scaler = filter_and_scale(outputs_like, scale=scale_output)
         assert scale_output ^ (self.output_scaler is None) # sanity check 
 
+        print('done with filter and scale starting split-apply-combine to get moments', flush=True)
         self.df_mu = th.Tensor(inputs_df.groupby(group_key).mean().values).detach()
         self.df_sigma = th.Tensor(inputs_df.groupby(group_key).std(ddof=0).values).detach()
         self.outs_df = th.Tensor(outs_df.groupby(group_key).mean().values).detach()
@@ -112,7 +114,7 @@ class UQMomentsDataset(Dataset):
         self.input_col_names = inputs_df.columns
         self.output_col_names = outs_df.columns
 
-        print('reduced df len: ', self.df_sigma.shape[0])
+        print('reduced df len: ', self.df_sigma.shape[0], flush=True)
         assert self.df_sigma.shape[0]>1000, 'did you use too few groups?'
 
     def to(self, device):
@@ -148,8 +150,9 @@ class UQSamplesDataset(Dataset):
 # NOTE: this takes MULTIPLE samples per distribution then get the SE for the entire distribution & save that as training target!
 # you can do this partially by using split-apply-combine with pandas
 class UQErrorPredictionDataset(Dataset):
-    def __init__(self, target_model: nn.Module, moments_dataset: UQMomentsDataset, samples_per_distribution=1000, **kwargs):
+    def __init__(self, target_model: nn.Module, moments_dataset: UQMomentsDataset, samples_per_distribution=150, **kwargs):
         self.target_model = target_model
+        self.target_model.eval()
         self.moments_dataset = moments_dataset
         self.sampling_dataset = UQSamplesDataset(moments_dataset)
 
@@ -158,15 +161,31 @@ class UQErrorPredictionDataset(Dataset):
         # that errors are i.i.d which lets us compute total uncertainty during demo 
         # P.S. this slick addition method lets us avoid using groupby! groups are implicitly positions!
 
-        self.SE_model = 0 # dummy value to be replaced by matrix
-        for i in range(samples_per_distribution):
-            input_samples, outputs = self.sampling_dataset[:]
-            preds = self.target_model(input_samples)
-            self.SE_model = self.SE_model + ((preds-outputs)**2).detach()
-            # accumulate SSE, NOTE: VAR(X+Y)=VAR(X)+VAR(Y) | X indep Y
-    
-        self.SE_model /= samples_per_distribution # derive MSE
-        self.SE_model = self.SE_model**(1/2) # MSE --> Standard Error
+        with th.no_grad(): 
+            self.SE_model = 0 # dummy value to be replaced by matrix
+            for i in range(samples_per_distribution):
+                print('taking sample: ', i, flush=True)
+                input_samples, outputs = self.sampling_dataset[:]
+                preds = self.target_model(input_samples).detach()
+                self.SE_model = self.SE_model + ((preds-outputs)**2).detach()
+                # accumulate SSE, NOTE: VAR(X+Y)=VAR(X)+VAR(Y) | X indep Y
+ 
+                if i%150==0:
+                    print('garbage collecting', flush=True)
+                    import gc
+                    while gc.collect(): pass 
+                    th.cuda.empty_cache()
+
+            self.SE_model /= samples_per_distribution # derive MSE
+            self.SE_model = self.SE_model**(1/2) # MSE --> Standard Error
+        #self.SE_model=self.SE_model.cpu()
+        #self.target_model=self.target_model.cpu()
+        #self.moments_dataset=self.moments_dataset.to('cpu')
+
+    def to(self, device):
+        self.SE_model=self.SE_model.to(device)
+        self.target_model=self.target_model.to(device)
+        self.moments_dataset=self.moments_dataset.to(device)
 
     def __len__(self):
         return len(self.moments_dataset)
@@ -378,11 +397,24 @@ class UQRegressorDataModule(UQ_DataModule):
         :param data_fn: grouped chrest csv for getting moments
         :param constant: whether to keep the (uncertain) inputs constant (i.e. use only mean), I believe constant is a good idea
         """
-        moments_dataset = UQMomentsDataset(data_fn, **kwargs)
-        (mu, sigma), outs = random.choice(moments_dataset)
+        print('entering UQRegressorDataModule & making UQMomentsDataset', flush=True)
+        moments_dataset = UQMomentsDataset(data_fn, **kwargs)#.to('cuda')
+        print('finishing making UQMomentsDataset & loading mean regressor', flush=True)
 
-        mean_regressor = load_mean_regressor_factory(mean_regressor_fn, moments_dataset.input_col_names)
+        mean_regressor = load_mean_regressor_factory(mean_regressor_fn, moments_dataset.input_col_names)#.cuda()
+        print('done loading mean_regressor & now making UQErrorPredictionDataset', flush=True)
+
+        original_device = mean_regressor.device
+        try: # try to move everything to GPUs
+            moments_dataset=moments_dataset.to('cuda')
+            mean_regressor=mean_regressor.cuda()
+        except:
+            print('evaluating model & getting samples on the CPU')
+
         regressor_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset, **kwargs)
+        regressor_dataset = regressor_dataset.to(original_device)
+        print('done making UQErrorPredictionDataset & now doing super init (for UQ_DataModule)', flush=True)
+
         super().__init__(regressor_dataset, **kwargs)
 
 #########################################################################
@@ -418,4 +450,5 @@ def cli_main():
     cli.trainer.save_checkpoint("model.ckpt")
 
 if __name__=='__main__':
+    print('entering main', flush=True)
     cli_main()
