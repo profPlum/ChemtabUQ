@@ -10,10 +10,10 @@
 #SBATCH --ntasks-per-node=2   # This needs to match Trainer(devices=...), Also: it seems that GPU nodes have only 2 GPUs per node anyways...
 #SBATCH --mem=25G
 #SBATCH --nodes=1 # This needs to match Trainer(nodes=...)
-#SBATCH --partition=general-compute #scavenger #general-compute
-#SBATCH --qos=general-compute #scavenger #general-compute
+#SBATCH --partition=general-compute # scavenger sucks apparently: counts against priority & is interruptable
+#SBATCH --qos=general-compute
 #SBATCH --time=24:00:00
-#SBATCH --job-name="Souener-Identity-CPVs" 
+#SBATCH --job-name="UQ-Souener-10-CPVs" 
 ## sort by information entropy
 
 # #SBATCH --constraint="V100|P100"
@@ -37,24 +37,26 @@ export NUM_PERTURB_SPREAD=0.2 # we've already got pretty good parameters
 
 # NO QR datasets:
 #DATA=~/data/TChem+Perturbedx2/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
-DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
-#DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
+#DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
+#DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz # safest dataset
+
+DATA=~/data/TChem_All_collated/TChem+CPVs+Zmix_MassR2_new.csv.gz
 
 #DATA=~/data/ablate_methane_steadystate_collated/TChem+CPVs+Zmix_MassR2.csv.gz
 #DATA=~/data/TC_methane_SS++_collated/TChem+CPVs+Zmix_MassR2.csv.gz
 
-#N_CPVS=10 # we also want to include zmix in inputs
-#VALID_CPV_RANGE="$(regex_number_range 0 $N_CPVS)"
-INPUTS="mass_CPV_(zmix|PC_$VALID_CPV_RANGE)"
+N_CPVS=10 # we also want to include zmix in inputs
+VALID_CPV_RANGE="$(regex_number_range 0 $N_CPVS)"
+INPUTS="mass_CPV_(zmix|PC_$VALID_CPV_RANGE)" #|pressure|temp|dt)"
 #OUTPUTS="source_CPV_PC_$VALID_CPV_RANGE" # we exclude zmix b/c zmix_source=0 by constraints
-#OUTPUTS=souener
-OUTPUTS=^Yi
+OUTPUTS=souener
+#OUTPUTS=^Yi
 #LOSS='--model.MAPE_loss True'
 #LOSS='--model.sMAPE_loss True'
 #LOSS='--model.MSE_loss True'
 AUTO_PERTURB_ARGS=0 # turn on for auto-hparam search!
 RESUME=0 # Tell job stub to load last ckpts from this experiment
-USE_TIMESORTED_SPLIT=1 # Tell job to exclude only the latest part of the simulation
+USE_TIMESORTED_SPLIT=0 # Tell job to exclude only the latest part of the simulation
 #USE_BEST_SEED=1 # Tell job to use the best known split seed
 
 ####################################################
@@ -65,7 +67,7 @@ echo OUTPUTS=$OUTPUTS
 # IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script
 JOB_CFG="$JOB_CFG --data.data_fn=$DATA --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.sort_key=time"
-JOB_CFG="$JOB_CFG --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1 $LOSS"
+JOB_CFG="$JOB_CFG $LOSS --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1" # --trainer.max_time '00:12:00:00'"
 #JOB_CFG="$JOB_CFG --data.scale_output False --model.n_layers=1 --model.SELU False --trainer.max_epochs=1000" # Identity Inverse Model setup
 # this set of args are relatively constant across experiments or they take args specified elsewhere
 
@@ -118,10 +120,14 @@ else
     JOB_CFG="$JOB_CFG --data.split_seed=$split_seed"
 fi
 
-#MEAN_ONLY=0 # Turn on UQ
-MEAN_ONLY=1 # Turn off UQ for now
+MEAN_ONLY=0 # Turn on UQ
+#MEAN_ONLY=1 # Turn off UQ for now
+SAMPLES_PER_DISTRIBUTION="--data.samples_per_distribution=1000 $SAMPLES_PER_DISTRIBUTION"
+# this special arg is needed to avoid errors when fitting mean regressor
+
 JOB_CFG="$TRAIN_CFG $JOB_CFG" #--ckpt_path=last" # last isn't supported, it appears it doesn't work 
 EXTRA_PL_ARGS="$JOB_CFG $EXTRA_PL_ARGS" # inject manually specified user arguments (with priority over job cfg)
+((! MEAN_ONLY)) && EXTRA_PL_ARGS="--trainer.max_time 00:12:00:00 $EXTRA_PL_ARGS" # --trainer.max_time 00:00:05:00 " # NOTE: here we assume that 12h is 1/2 of the job allocation time
 ((RESUME)) && EXTRA_PL_ARGS= # if RESUME==1 we don't want to mess with existing settings
 
 source chemtab_UQ_job_stub.sh
