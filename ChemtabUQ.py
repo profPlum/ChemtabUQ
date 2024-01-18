@@ -1,5 +1,5 @@
 
-import os, re
+import os, re, sys
 from typing import Any, Optional
 import pandas as pd
 import numpy as np
@@ -150,11 +150,14 @@ class UQSamplesDataset(Dataset):
 # NOTE: this takes MULTIPLE samples per distribution then get the SE for the entire distribution & save that as training target!
 # you can do this partially by using split-apply-combine with pandas
 class UQErrorPredictionDataset(Dataset):
-    def __init__(self, target_model: nn.Module, moments_dataset: UQMomentsDataset, samples_per_distribution=150, **kwargs):
+    def __init__(self, target_model: nn.Module, moments_dataset: UQMomentsDataset, samples_per_distribution=1000, **kwargs):
         self.target_model = target_model
         self.target_model.eval()
         self.moments_dataset = moments_dataset
         self.sampling_dataset = UQSamplesDataset(moments_dataset)
+
+        try: self.to('cuda') # use GPU temporarily for faster sampling
+        except: print('Warning: NOT using CUDA for input sampling, this will be slow...', file=sys.stderr)
 
         # NOTE: idea is for each UQ distribution we sample n=samples_per_distribution times
         # then we derive SE from accumulated SSE. This is better than MAE because we can assume
@@ -178,14 +181,12 @@ class UQErrorPredictionDataset(Dataset):
 
             self.SE_model /= samples_per_distribution # derive MSE
             self.SE_model = self.SE_model**(1/2) # MSE --> Standard Error
-        #self.SE_model=self.SE_model.cpu()
-        #self.target_model=self.target_model.cpu()
-        #self.moments_dataset=self.moments_dataset.to('cpu')
+        self.to('cpu') # must be on CPU after the sampling to avoid errors
 
     def to(self, device):
-        self.SE_model=self.SE_model.to(device)
         self.target_model=self.target_model.to(device)
         self.moments_dataset=self.moments_dataset.to(device)
+        self.SE_model=self.SE_model.to(device) # NOTE: this line must come last!
 
     def __len__(self):
         return len(self.moments_dataset)
@@ -398,21 +399,13 @@ class UQRegressorDataModule(UQ_DataModule):
         :param constant: whether to keep the (uncertain) inputs constant (i.e. use only mean), I believe constant is a good idea
         """
         print('entering UQRegressorDataModule & making UQMomentsDataset', flush=True)
-        moments_dataset = UQMomentsDataset(data_fn, **kwargs)#.to('cuda')
+        moments_dataset = UQMomentsDataset(data_fn, **kwargs)
         print('finishing making UQMomentsDataset & loading mean regressor', flush=True)
 
-        mean_regressor = load_mean_regressor_factory(mean_regressor_fn, moments_dataset.input_col_names)#.cuda()
+        mean_regressor = load_mean_regressor_factory(mean_regressor_fn, moments_dataset.input_col_names)
         print('done loading mean_regressor & now making UQErrorPredictionDataset', flush=True)
 
-        original_device = mean_regressor.device
-        try: # try to move everything to GPUs
-            moments_dataset=moments_dataset.to('cuda')
-            mean_regressor=mean_regressor.cuda()
-        except:
-            print('evaluating model & getting samples on the CPU')
-
         regressor_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset, **kwargs)
-        regressor_dataset = regressor_dataset.to(original_device)
         print('done making UQErrorPredictionDataset & now doing super init (for UQ_DataModule)', flush=True)
 
         super().__init__(regressor_dataset, **kwargs)

@@ -99,7 +99,7 @@ cd -
 cd CT_logs_Sigma
 if ((! MEAN_ONLY)); then
 	# TODO: fix bad mean regressor loading for cases with multiple jobs running at once
-    srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=UQRegressorDataModule --data.mean_regressor_fn=~/ChemtabUQ/CT_logs_Mu/mean_regressors/model-${SLURM_JOB_ID}.ckpt $lightning_CLI_args #--trainer.default_root_dir=CT_logs_Sigma 
+    srun --ntasks-per-node=2 python ../ChemtabUQ.py fit --data.class_path=UQRegressorDataModule --data.mean_regressor_fn=~/ChemtabUQ/CT_logs_Mu/mean_regressors/model-${SLURM_JOB_ID}.ckpt $lightning_CLI_args $SAMPLES_PER_DISTRIBUTION #--trainer.default_root_dir=CT_logs_Sigma 
 	mkdir UQ_regressors 2> /dev/null
     mv model.ckpt UQ_regressors/model-${SLURM_JOB_ID}.ckpt
 fi
