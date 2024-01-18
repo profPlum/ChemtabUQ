@@ -10,7 +10,7 @@
 #SBATCH --ntasks-per-node=2   # This needs to match Trainer(devices=...), Also: it seems that GPU nodes have only 2 GPUs per node anyways...
 #SBATCH --mem=25G
 #SBATCH --nodes=1 # This needs to match Trainer(nodes=...)
-#SBATCH --partition=general-compute # scavenger sucks apparently: counts against priority & is interruptable
+#SBATCH --partition=general-compute # scavenger sucks: counts against priority & is interruptable
 #SBATCH --qos=general-compute
 #SBATCH --time=24:00:00
 #SBATCH --job-name="UQ-Souener-10-CPVs" 
@@ -66,7 +66,7 @@ echo OUTPUTS=$OUTPUTS
 
 # IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script
-JOB_CFG="$JOB_CFG --data.data_fn=$DATA --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.sort_key=time"
+JOB_CFG="$JOB_CFG --data.data_fn=$DATA --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.sort_key=time" #--data.train_portion=0.99"
 JOB_CFG="$JOB_CFG $LOSS --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1" # --trainer.max_time '00:12:00:00'"
 #JOB_CFG="$JOB_CFG --data.scale_output False --model.n_layers=1 --model.SELU False --trainer.max_epochs=1000" # Identity Inverse Model setup
 # this set of args are relatively constant across experiments or they take args specified elsewhere
@@ -125,9 +125,8 @@ MEAN_ONLY=0 # Turn on UQ
 SAMPLES_PER_DISTRIBUTION="--data.samples_per_distribution=1000 $SAMPLES_PER_DISTRIBUTION"
 # this special arg is needed to avoid errors when fitting mean regressor
 
-JOB_CFG="$TRAIN_CFG $JOB_CFG" #--ckpt_path=last" # last isn't supported, it appears it doesn't work 
-EXTRA_PL_ARGS="$JOB_CFG $EXTRA_PL_ARGS" # inject manually specified user arguments (with priority over job cfg)
-((! MEAN_ONLY)) && EXTRA_PL_ARGS="--trainer.max_time 00:12:00:00 $EXTRA_PL_ARGS" # --trainer.max_time 00:00:05:00 " # NOTE: here we assume that 12h is 1/2 of the job allocation time
+((! MEAN_ONLY)) && JOB_CFG="$JOB_CFG --data.group_key=group --trainer.max_time 00:12:00:00" # NOTE: here we assume that 12h is 1/2 of the job allocation time
+EXTRA_PL_ARGS="$TRAIN_CFG $JOB_CFG $EXTRA_PL_ARGS" # inject manually specified user arguments (with priority: Extra>Job>Train)
 ((RESUME)) && EXTRA_PL_ARGS= # if RESUME==1 we don't want to mess with existing settings
 
 source chemtab_UQ_job_stub.sh
