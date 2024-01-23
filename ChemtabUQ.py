@@ -289,8 +289,10 @@ class FFRegressor(pl.LightningModule):
         prefix = 'val_' if val_metrics else ''
         self.log(prefix+'MSE',  F.mse_loss(Y_pred, Y), sync_dist=sync_dist)
         mae = F_metrics.mean_absolute_error(Y_pred, Y)
+        souener_scale = 135843428441 # based on TChem transient sample diffusion flame 1/22/24
 
-        self.log(prefix+'MAE', F_metrics.mean_absolute_error(Y_pred, Y), sync_dist=sync_dist)
+        self.log(prefix+'MAE', mae, sync_dist=sync_dist)
+        self.log(prefix+'MAE_souener_raw', mae*souener_scale, sync_dist=sync_dist)
         self.log(prefix+'R2_avg_sample_var', F_metrics.r2_score(Y_pred, Y, multioutput='uniform_average'), sync_dist=sync_dist)
         self.log(prefix+'R2_var_weighted_sample_var', F_metrics.r2_score(Y_pred, Y, multioutput='variance_weighted'), sync_dist=sync_dist)
         self.log(prefix+'R2_var_weighted', r2_robust_var_weighted(Y_pred, Y), sync_dist=sync_dist)
@@ -335,7 +337,10 @@ class UQ_DataModule(pl.LightningDataModule):
 
         vars(self).update(locals()); del self.self # gotcha to make trick work
         self.prepare_data_per_node=False
-    
+   
+    def prepare(self):
+        print('entering prepare')
+
     def setup(self, stage=None): # simple version 
         # fit the R^2 metrics to the dataset so that they work
         # TODO: actually it is possible to elegantly avoid global state, 
@@ -396,7 +401,6 @@ class UQRegressorDataModule(UQ_DataModule):
         """
         This is the dataset used for fitting a UQ model (i.e. 2nd moment aka SE regressor)
         :param data_fn: grouped chrest csv for getting moments
-        :param constant: whether to keep the (uncertain) inputs constant (i.e. use only mean), I believe constant is a good idea
         """
         print('entering UQRegressorDataModule & making UQMomentsDataset', flush=True)
         moments_dataset = UQMomentsDataset(data_fn, **kwargs)
