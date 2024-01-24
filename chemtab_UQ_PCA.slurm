@@ -13,7 +13,7 @@
 #SBATCH --partition=general-compute # scavenger sucks: counts against priority & is interruptable
 #SBATCH --qos=general-compute
 #SBATCH --time=24:00:00
-#SBATCH --job-name="UQ-Souener-10-CPVs" 
+#SBATCH --job-name="Batch500-Aggro-SousCPV-10-CPVs" 
 ## sort by information entropy
 
 # #SBATCH --constraint="V100|P100"
@@ -48,17 +48,17 @@ DATA=~/data/TChem_All_collated/TChem+CPVs+Zmix_MassR2_new.csv.gz
 N_CPVS=10 # we also want to include zmix in inputs
 VALID_CPV_RANGE="$(regex_number_range 0 $N_CPVS)"
 INPUTS="mass_CPV_(zmix|PC_$VALID_CPV_RANGE)" #|pressure|temp|dt)"
-#OUTPUTS="source_CPV_PC_$VALID_CPV_RANGE" # we exclude zmix b/c zmix_source=0 by constraints
-OUTPUTS=souener
+OUTPUTS="source_CPV_PC_$VALID_CPV_RANGE" # we exclude zmix b/c zmix_source=0 by constraints
+#OUTPUTS=souener
 #OUTPUTS=^Yi
 #LOSS='--model.MAPE_loss True'
 #LOSS='--model.sMAPE_loss True'
 #LOSS='--model.MSE_loss True'
+
+split_seed=$RANDOM # can be overriden if USE_TIMESORTED_SPLIT=1
+USE_TIMESORTED_SPLIT=0 # Tell job to exclude only the latest part of the simulation
 AUTO_PERTURB_ARGS=0 # turn on for auto-hparam search!
 RESUME=0 # Tell job stub to load last ckpts from this experiment
-USE_TIMESORTED_SPLIT=0 # Tell job to exclude only the latest part of the simulation
-#USE_BEST_SEED=1 # Tell job to use the best known split seed
-
 ####################################################
 
 echo INPUTS=$INPUTS # Wow it works!
@@ -78,7 +78,7 @@ JOB_CFG="$JOB_CFG $LOSS --data.scale_output True --data.group_key=null --trainer
 # NOTE: LR finder found: --model.learning_rate 1.318e-07 (batch=20000, median over 200 trials)
 # NOTE: LR finder found: --model.learning_rate 1.663e-05 (batch=20000, mean over 200 trials)
 # NOTE: set gradient_clip_val=null to disable it! (default is 0.25)
-TRAIN_CFG="--model.hidden_size=500 --data.batch_size=10000 --model.SELU True --trainer.gradient_clip_val=0.25 --model.learning_rate 0.0001445439770745928"
+TRAIN_CFG="--model.hidden_size=500 --data.batch_size=500 --model.SELU True --trainer.gradient_clip_val=0.5 --model.learning_rate 0.01" #--model.learning_rate 0.0001445439770745928"
 TRAIN_CFG="$TRAIN_CFG --model.reduce_lr_on_plateu_shedule=True --model.RLoP_patience=100 --model.RLoP_cooldown=20 --model.RLoP_factor=0.95"
 #TRAIN_CFG="$TRAIN_CFG --model.cosine_annealing_lr_schedule=True --model.cos_T_0=60 --model.cos_T_mult=null" # cosine annealing + warm restarts with increasing period
 #TRAIN_CFG="$TRAIN_CFG --model.cosine_annealing_lr_schedule=True --model.cos_T_0=1 --model.cos_T_mult=2" # consine annealing vanilla
@@ -90,39 +90,14 @@ TRAIN_CFG="$TRAIN_CFG --model.reduce_lr_on_plateu_shedule=True --model.RLoP_pati
 ((AUTO_PERTURB_ARGS)) && TRAIN_CFG=$(auto_cli_perturb "$TRAIN_CFG")
 echo TRAIN_CFG: $TRAIN_CFG
 
-# GOTCHA: Currently this is rather misleading b/c actually both 10_CPV_data & 5_CPV_data have different preshuffling 
-# so the seeds are incomparable. Hopefully they generalize across souener & souscpv.
-BEST_SEED_5_CPVS=5605 # epoch=22759-val_loss=0.0024-val_MAPE=0.1256-val_R2_avg=0.9735 (Souener, hidden_size=500, CPVs=5)
-BEST_SEED_10_CPVS=11436 # epoch=21993-val_loss=0.0013-val_MAPE=0.0553-val_R2_avg=0.9841 (SousCPV, hidden_size=1000, CPVs=10)
-BEST_SEED_25_CPVS=26415 # epoch=9688-val_loss=0.0027-val_MAPE=0.0165-val_R2_avg=0.9543 (Souener, hidden_size=1500, CPVs=25)
+#split_seed=$RANDOM # NOTE: this is now set much earlier in the script in case a particular seed is desired
+((USE_TIMESORTED_SPLIT)) && split_seed=null # null means last X% (sorted by time by default)
+echo adding random split seed: $split_seed
+JOB_CFG="$JOB_CFG --data.split_seed=$split_seed"
 
-if [[ $DATA =~ /5_CPV_data ]]; then
-    # tested once on Souener (see above)
-    BEST_SEED=$BEST_SEED_5_CPVS
-    echo 5_CPV_data
-elif [[ $DATA =~ /10_CPV_data ]]; then
-    # tested once on SousCPV (see above)
-    BEST_SEED=$BEST_SEED_10_CPVS
-    echo 10_CPV_data
-elif [[ $DATA =~ /25_CPV_data ]]; then
-    # tested once on Souener (see above)
-    BEST_SEED=$BEST_SEED_25_CPVS
-    echo 25_CPV_data
-fi
-
-if ((USE_BEST_SEED)); then
-    # we turn off sort key for compatibility with older datasets which came preshuffled
-    JOB_CFG="$JOB_CFG --data.split_seed=$BEST_SEED --data.sort_key=null"
-else
-    split_seed=$RANDOM
-    ((USE_TIMESORTED_SPLIT)) && split_seed=null # null means last X% (sorted by time by default)
-    echo adding random split seed: $split_seed
-    JOB_CFG="$JOB_CFG --data.split_seed=$split_seed"
-fi
-
-MEAN_ONLY=0 # Turn on UQ
-#MEAN_ONLY=1 # Turn off UQ for now
-SAMPLES_PER_DISTRIBUTION="--data.samples_per_distribution=1000 $SAMPLES_PER_DISTRIBUTION"
+#MEAN_ONLY=0 # Turn on UQ
+MEAN_ONLY=1 # Turn off UQ for now
+EXTRA_UQ_ARGS="--data.samples_per_distribution=100000 $EXTRA_UQ_ARGS"
 # this special arg is needed to avoid errors when fitting mean regressor
 
 ((! MEAN_ONLY)) && JOB_CFG="$JOB_CFG --data.group_key=group --trainer.max_time 00:12:00:00" # NOTE: here we assume that 12h is 1/2 of the job allocation time
