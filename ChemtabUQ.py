@@ -1,4 +1,3 @@
-
 import os, re, sys
 from typing import Any, Optional
 import pandas as pd
@@ -73,6 +72,8 @@ class UQMomentsDataset(Dataset):
         col_load_predicate=lambda col_name: col_name in [group_key,sort_key] \
             or re.search(inputs_like, col_name) or re.search(outputs_like, col_name)
         df = pd.read_csv(csv_fn, usecols=col_load_predicate)
+        print('loaded df: ')
+        print(df.describe())
         print('original df len: ', len(df), flush=True)
 
         if sort_key:
@@ -94,10 +95,8 @@ class UQMomentsDataset(Dataset):
             subset_df = df.filter(regex=like)
             if scale:
                 scaler = StandardScaler()
-                print(f'old columns: {subset_df.columns}')
                 subset_df = pd.DataFrame(scaler.fit_transform(subset_df), index=subset_df.index,
                                          columns=subset_df.columns)
-                print(f'new columns: {subset_df.columns}')
             subset_df.index = df[group_key]
             return subset_df, scaler
 
@@ -106,17 +105,31 @@ class UQMomentsDataset(Dataset):
         outs_df, self.output_scaler = filter_and_scale(outputs_like, scale=scale_output)
         assert scale_output ^ (self.output_scaler is None) # sanity check 
 
-        print('done with filter and scale starting split-apply-combine to get moments', flush=True)
-        self.df_mu = th.Tensor(inputs_df.groupby(group_key).mean().values).detach()
-        self.df_sigma = th.Tensor(inputs_df.groupby(group_key).std(ddof=0).values).detach()
-        self.outs_df = th.Tensor(outs_df.groupby(group_key).mean().values).detach()
-
+        print('done with filter and scale starting moment data generation', flush=True)
+        self.group_key = group_key # needed by our generate_moments_data method
+        (self.df_mu, self.df_sigma), self.outs_df = self.generate_moments_data(inputs_df, outs_df)
+ 
+        print('all column names: ', df.columns)
         self.input_col_names = inputs_df.columns
         self.output_col_names = outs_df.columns
+        print('input column names: ', self.input_col_names)
+        print('output column names: ', self.output_col_names)
 
         print('reduced df len: ', self.df_sigma.shape[0], flush=True)
         assert self.df_sigma.shape[0]>1000, 'did you use too few groups?'
 
+    # NOTE: the interface includes outs_df to enable larger scale data-augmentation
+    # (via multiple variance realizations) & enables original coursening idea too
+    def generate_moments_data(self, inputs_df: pd.DataFrame, outs_df: pd.DataFrame): 
+
+        print('starting split-apply-combine to get moments')
+        df_mu = th.Tensor(inputs_df.groupby(self.group_key).mean().values).detach()
+        df_sigma = th.Tensor(inputs_df.groupby(self.group_key).std(ddof=0).values).detach()
+        outs_df = th.Tensor(outs_df.groupby(self.group_key).mean().values).detach()
+        print('done')
+
+        return (df_mu, df_sigma), outs_df
+ 
     def to(self, device):
         self.df_mu=self.df_mu.to(device)
         self.df_sigma=self.df_sigma.to(device)
@@ -129,6 +142,44 @@ class UQMomentsDataset(Dataset):
     def __getitem__(self, idx):
         outputs = self.outs_df[idx,:]
         return (self.df_mu[idx,:], self.df_sigma[idx,:]), outputs
+
+# Verified to work: 1/25/24
+class UQSyntheticMomentsDataset(UQMomentsDataset):
+    def __init__(self, *args, sigma_max_coef=10, n_copies=1, **kwd_args):
+        """ 
+        Synthetic UQ Dataset which generates random variances
+        (but real datum means) to Produce UQ moments
+        :param sigma_max_coef: coefficient multiplied with full sample stds to get max valid sigma values
+        :param n_copies: number of copies to make of the original dataset for more extensive variance data-augmentation
+        """
+        self.sigma_max_coef = sigma_max_coef
+        self.n_copies = n_copies
+        super().__init__(*args, group_key=None, **kwd_args)
+        # grouping doesn't apply to this method
+
+    # NOTE: the interface includes outs_df to enable larger scale data-augmentation
+    # (via multiple variance realizations) & enables original coursening idea too
+    def generate_moments_data(self, inputs_df: pd.DataFrame, outs_df: pd.DataFrame):
+        print('generating synthetic variance moments')
+
+        #if self.n_copies>1: # simple way to augment the dataset with even more synthetic variances.
+        inputs_df=pd.concat([inputs_df]*self.n_copies,axis=0)
+        outs_df=pd.concat([outs_df]*self.n_copies,axis=0)
+ 
+        # 10x sample variance means it's useless
+        sigmas_max = self.sigma_max_coef*th.Tensor(inputs_df.std().values).squeeze().detach()
+        print('sigmas_max: ')
+        print(sigmas_max)
+
+        df_mu = th.Tensor(inputs_df.values).detach()
+        df_sigma = sigmas_max*th.rand_like(df_mu).detach()
+
+        print('df_sigma.min(): ')
+        print(df_sigma.min(axis=0))
+        print('df_sigma.max(): ')
+        print(df_sigma.max(axis=0))
+
+        return (df_mu, df_sigma), th.Tensor(outs_df.values).detach()
 
 class UQSamplesDataset(Dataset):
     """ Wrapper for UQMomentsDataset which produces samples from the corresponding moments """
@@ -397,13 +448,15 @@ def load_mean_regressor_factory(model_fn, cols):
     return model
 
 class UQRegressorDataModule(UQ_DataModule):
-    def __init__(self, data_fn: str, mean_regressor_fn: str, **kwargs):
+    def __init__(self, data_fn: str, mean_regressor_fn: str, synthetic_var=True, **kwargs):
         """
         This is the dataset used for fitting a UQ model (i.e. 2nd moment aka SE regressor)
         :param data_fn: grouped chrest csv for getting moments
+        :param mean_regressor_fn: path to mean_regressor checkpoint to apply forward-UQ to
+        :param synthetic_var: whether to use synthetic variance momments for trainining (this makes the most sense for general UQ)
         """
         print('entering UQRegressorDataModule & making UQMomentsDataset', flush=True)
-        moments_dataset = UQMomentsDataset(data_fn, **kwargs)
+        moments_dataset = UQSyntheticMomentsDataset(data_fn, **kwargs) if synthetic_var else UQMomentsDataset(data_fn, **kwargs)
         print('finishing making UQMomentsDataset & loading mean regressor', flush=True)
 
         mean_regressor = load_mean_regressor_factory(mean_regressor_fn, moments_dataset.input_col_names)
