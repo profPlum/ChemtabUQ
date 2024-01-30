@@ -55,7 +55,7 @@ r2_robust_var_weighted = R2_robust(variance_weighted=True)
 
 # TODO: put inside prepare method for LigthningDataModule! (should only happen once then result saved to disk)
 class UQMomentsDataset(Dataset):
-    def __init__(self, csv_fn: str, inputs_like='Yi', outputs_like='souspec', group_key='group',
+    def __init__(self, csv_fn: str, inputs_like='Yi', outputs_like='souspec', group_key: str=None,
                  sort_key='time', scale_output=False, **kwd_args):
         """
         Generic UQ Dataset which uses split-apply-combine on group_key to Produce UQ moments (mean & variance)
@@ -97,7 +97,6 @@ class UQMomentsDataset(Dataset):
                 scaler = StandardScaler()
                 subset_df = pd.DataFrame(scaler.fit_transform(subset_df), index=subset_df.index,
                                          columns=subset_df.columns)
-            subset_df.index = df[group_key]
             return subset_df, scaler
 
         print('doing filter and scale', flush=True)
@@ -162,10 +161,17 @@ class UQSyntheticMomentsDataset(UQMomentsDataset):
     def generate_moments_data(self, inputs_df: pd.DataFrame, outs_df: pd.DataFrame):
         print('generating synthetic variance moments')
 
-        #if self.n_copies>1: # simple way to augment the dataset with even more synthetic variances.
-        inputs_df=pd.concat([inputs_df]*self.n_copies,axis=0)
-        outs_df=pd.concat([outs_df]*self.n_copies,axis=0)
- 
+        # verified to work: 1/29/24
+        # duplicates data while retaining order (for e.g. previous sorting)
+        def make_ordered_copies(df,n_copies):
+            df['order']=range(len(df))
+            copied_df=pd.concat([df]*n_copies,axis=0)
+            return copied_df.sort_values(by='order').drop(columns='order')
+
+        # simple way to augment the dataset with even more synthetic variances.
+        inputs_df=make_ordered_copies(inputs_df, self.n_copies)
+        outs_df=make_ordered_copies(outs_df, self.n_copies)
+
         # 10x sample variance means it's useless
         sigmas_max = self.sigma_max_coef*th.Tensor(inputs_df.std().values).squeeze().detach()
         print('sigmas_max: ')
@@ -201,7 +207,8 @@ class UQSamplesDataset(Dataset):
 # NOTE: this takes MULTIPLE samples per distribution then get the SE for the entire distribution & save that as training target!
 # you can do this partially by using split-apply-combine with pandas
 class UQErrorPredictionDataset(Dataset):
-    def __init__(self, target_model: nn.Module, moments_dataset: UQMomentsDataset, samples_per_distribution=1000, **kwargs):
+    def __init__(self, target_model: nn.Module, moments_dataset: UQMomentsDataset, 
+                 samples_per_distribution=1000, scale_UQ_output=False, **kwargs):
         self.target_model = target_model
         self.target_model.eval()
         self.moments_dataset = moments_dataset
@@ -230,9 +237,12 @@ class UQErrorPredictionDataset(Dataset):
                     while gc.collect(): pass 
                     th.cuda.empty_cache()
 
-            self.SE_model /= samples_per_distribution # derive MSE
+            self.SE_model /= samples_per_distribution-1 # derive MSE (bias corrected)
             self.SE_model = self.SE_model**(1/2) # MSE --> Standard Error
         self.to('cpu') # must be on CPU after the sampling to avoid errors
+        if scale_UQ_output: 
+            self.output_scaler = StandardScaler()
+            self.SE_model[:] = th.from_numpy(self.output_scaler.fit_transform(self.SE_model))
 
     def to(self, device):
         self.target_model=self.target_model.to(device)
@@ -369,8 +379,6 @@ class FFRegressor(pl.LightningModule):
         self.training_step(val_batch, batch_id, val_metrics=True)
         # with val_metrics=True it will log hp_metric too! 
 
-# TODO: should do moments preprocessing in the prep function stage then save the file to pickle with hash based on arguments & reload later
-# doubly important since we are seperating the mean regressor fitting from the UQ model fitting!
 class UQ_DataModule(pl.LightningDataModule):
     def __init__(self, dataset: Dataset, batch_size: int=10000, train_portion: float=0.8, 
                  data_workers: int=4, split_seed: int=29, **kwd_args):
@@ -381,7 +389,7 @@ class UQ_DataModule(pl.LightningDataModule):
         :param train_portion: portion of dataset to be trained on
         :param data_workers: number of paralell workers to load the dataset per GPU
         :param split_seed: the seed to be used for dataset splitting, encouraged to pass a random number for diversity.
-            Or you can pass none for time sorted split (but this is a bad idea).
+        Or you can pass none for time sorted split (but this is a bad idea).
         """
         super().__init__()
         self.save_hyperparameters(ignore=['dataset'])
@@ -448,15 +456,19 @@ def load_mean_regressor_factory(model_fn, cols):
     return model
 
 class UQRegressorDataModule(UQ_DataModule):
-    def __init__(self, data_fn: str, mean_regressor_fn: str, synthetic_var=True, **kwargs):
+    def __init__(self, data_fn: str, mean_regressor_fn: str, synthetic_var=True, split_seed: int=None, n_copies: int=1, **kwargs):
         """
         This is the dataset used for fitting a UQ model (i.e. 2nd moment aka SE regressor)
         :param data_fn: grouped chrest csv for getting moments
         :param mean_regressor_fn: path to mean_regressor checkpoint to apply forward-UQ to
         :param synthetic_var: whether to use synthetic variance momments for trainining (this makes the most sense for general UQ)
         """
+
+        if n_copies>1: assert synthetic_var, "n_copies>1 doesn't make any sense without synthetic_var=True."
+        if n_copies>1: assert split_seed is None, 'You need split_seed=None if n_copies>1, otherwise train-test split is violated.'
+
         print('entering UQRegressorDataModule & making UQMomentsDataset', flush=True)
-        moments_dataset = UQSyntheticMomentsDataset(data_fn, **kwargs) if synthetic_var else UQMomentsDataset(data_fn, **kwargs)
+        moments_dataset = UQSyntheticMomentsDataset(data_fn, n_copies=n_copies, **kwargs) if synthetic_var else UQMomentsDataset(data_fn, **kwargs)
         print('finishing making UQMomentsDataset & loading mean regressor', flush=True)
 
         mean_regressor = load_mean_regressor_factory(mean_regressor_fn, moments_dataset.input_col_names)
@@ -465,7 +477,7 @@ class UQRegressorDataModule(UQ_DataModule):
         regressor_dataset = UQErrorPredictionDataset(mean_regressor, moments_dataset, **kwargs)
         print('done making UQErrorPredictionDataset & now doing super init (for UQ_DataModule)', flush=True)
 
-        super().__init__(regressor_dataset, **kwargs)
+        super().__init__(regressor_dataset, split_seed=split_seed, **kwargs)
 
 #########################################################################
 
@@ -477,9 +489,6 @@ class MyLightningCLI(pl.cli.LightningCLI):
         parser.link_arguments(['trainer.devices', 'trainer.num_nodes'], 'model.lr_coef', apply_on='parse', compute_fn=lambda devices, num_nodes: int(num_nodes)*int(devices))
         parser.link_arguments(['data.dataset'], 'model.input_size', compute_fn=lambda dataset: next(iter(dataset))[0].shape[0], apply_on='instantiate') # holyshit this works!
         parser.link_arguments(['data.dataset'], 'model.output_size', compute_fn=lambda dataset: next(iter(dataset))[1].shape[0], apply_on='instantiate')
-        #get_shape = lambda ds, output=False: next(iter(dataset))[int(output)].shape[0] # shape 0 size batching is not applied yet, it is a 1d vector...    
-        #parser.link_arguments(['data.dataset'], 'model.input_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=False)) # holyshit this works!
-        #parser.link_arguments(['data.dataset'], 'model.output_size', apply_on='instantiate', compute_fn=lambda ds: get_shape(ds, output=True))
 
 # TODO: fix me, currently doesn't work: now new hyper-params are recorded this way!
 # NOTE: logs all CLI args (e.g. gradient clipping) as hyper-params for tensorboard logger
