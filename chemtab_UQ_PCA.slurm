@@ -13,7 +13,8 @@
 #SBATCH --partition=general-compute # scavenger sucks: counts against priority & is interruptable
 #SBATCH --qos=general-compute
 #SBATCH --time=24:00:00
-#SBATCH --job-name="Batch500-Aggro-SousCPV-10-CPVs" 
+#SBATCH --exclude=cpn-u23-05,cpn-u23-09,cpn-u23-11 # TODO: remove this when the nodes are fixed!
+#SBATCH --job-name="UQx4-Batch1000-SousCPV-10CPVs-seed=0"
 ## sort by information entropy
 
 # #SBATCH --constraint="V100|P100"
@@ -32,16 +33,10 @@ export NUM_PERTURB_SPREAD=0.2 # we've already got pretty good parameters
 # 'incomparable' & thus requires new experiment name
 #####################################################
 
-# QR datasets:
-#DATA=~/data/TChem+Perturbedx2/25_CPV_data/TChem+CPVs+Zmix_QR_MassR2.csv.gz
+#DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz # for identity experiments
+DATA=~/data/TChem_All_collated/TChem+CPVs+Zmix_MassR2_new.csv.gz # new default: contains new possible input features
 
-# NO QR datasets:
-#DATA=~/data/TChem+Perturbedx2/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz
-#DATA=~/data/Identity_CPV_data/TChem+CPVs+Zmix.csv.gz
-#DATA=~/data/25_CPV_data/TChem+CPVs+Zmix_MassR2.csv.gz # safest dataset
-
-DATA=~/data/TChem_All_collated/TChem+CPVs+Zmix_MassR2_new.csv.gz
-
+# SteadyState experiments
 #DATA=~/data/ablate_methane_steadystate_collated/TChem+CPVs+Zmix_MassR2.csv.gz
 #DATA=~/data/TC_methane_SS++_collated/TChem+CPVs+Zmix_MassR2.csv.gz
 
@@ -55,10 +50,16 @@ OUTPUTS="source_CPV_PC_$VALID_CPV_RANGE" # we exclude zmix b/c zmix_source=0 by 
 #LOSS='--model.sMAPE_loss True'
 #LOSS='--model.MSE_loss True'
 
-split_seed=$RANDOM # can be overriden if USE_TIMESORTED_SPLIT=1
+split_seed=0 #$RANDOM # can be overriden if USE_TIMESORTED_SPLIT=1
 USE_TIMESORTED_SPLIT=0 # Tell job to exclude only the latest part of the simulation
 AUTO_PERTURB_ARGS=0 # turn on for auto-hparam search!
 RESUME=0 # Tell job stub to load last ckpts from this experiment
+
+MEAN_ONLY=0 # Turn on/off UQ
+EXTRA_UQ_ARGS="--data.samples_per_distribution=10000 --data.n_copies=4 $EXTRA_UQ_ARGS" #TODO: use 100,000 samples
+#EXTRA_UQ_ARGS="--data.samples_per_distribution=1 --data.synthetic_var=False --data.scale_UQ_output=True $EXTRA_UQ_ARGS" #TODO: use 100,000 samples
+# this special arg is needed to avoid errors when fitting mean regressor
+
 ####################################################
 
 echo INPUTS=$INPUTS # Wow it works!
@@ -66,25 +67,25 @@ echo OUTPUTS=$OUTPUTS
 
 # IMPORTANT: use --data.group_key=null to ensure uncoursened grid, this avoids trivial case of 50 data!
 # IMPORTANT: currently relative --data.data_fn paths aren't supported b/c job stub cd's before launching script
-JOB_CFG="$JOB_CFG --data.data_fn=$DATA --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.sort_key=time" #--data.train_portion=0.99"
-JOB_CFG="$JOB_CFG $LOSS --data.scale_output True --data.group_key=null --trainer.benchmark=True --trainer.max_epochs -1" # --trainer.max_time '00:12:00:00'"
+JOB_CFG="$JOB_CFG --data.data_fn=$DATA --data.inputs_like=$INPUTS --data.outputs_like=$OUTPUTS --data.sort_key=time" # --data.train_portion=0.99"
+JOB_CFG="$JOB_CFG $LOSS --data.scale_output True --trainer.benchmark=True --trainer.max_epochs -1" # --trainer.max_time '00:12:00:00'"
 #JOB_CFG="$JOB_CFG --data.scale_output False --model.n_layers=1 --model.SELU False --trainer.max_epochs=1000" # Identity Inverse Model setup
 # this set of args are relatively constant across experiments or they take args specified elsewhere
 
 # NOTE: LR finder found: --model.learning_rate 0.0001445439770745928 (big batch=200k)
 # NOTE: LR finder found: --model.learning_rate 5.608e-06 (big batch=100k, median over 20+ trials)
 # NOTE: LR finder found: --model.learning_rate 0.0002596525 (big batch=100k, mean over 20+ trials)
-# ---------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------
 # NOTE: LR finder found: --model.learning_rate 1.318e-07 (batch=20000, median over 200 trials)
 # NOTE: LR finder found: --model.learning_rate 1.663e-05 (batch=20000, mean over 200 trials)
 # NOTE: set gradient_clip_val=null to disable it! (default is 0.25)
-TRAIN_CFG="--model.hidden_size=500 --data.batch_size=500 --model.SELU True --trainer.gradient_clip_val=0.5 --model.learning_rate 0.01" #--model.learning_rate 0.0001445439770745928"
+TRAIN_CFG="--model.hidden_size=500 --data.batch_size=1000 --model.SELU True --trainer.gradient_clip_val=0.25 --model.learning_rate 0.0001445439770745928"
 TRAIN_CFG="$TRAIN_CFG --model.reduce_lr_on_plateu_shedule=True --model.RLoP_patience=100 --model.RLoP_cooldown=20 --model.RLoP_factor=0.95"
 #TRAIN_CFG="$TRAIN_CFG --model.cosine_annealing_lr_schedule=True --model.cos_T_0=60 --model.cos_T_mult=null" # cosine annealing + warm restarts with increasing period
 #TRAIN_CFG="$TRAIN_CFG --model.cosine_annealing_lr_schedule=True --model.cos_T_0=1 --model.cos_T_mult=2" # consine annealing vanilla
 
-#IMPORTANT: "best config"
-#TRAIN_CFG="--trainer.max_epochs -1 $LOSS --model.SELU True --model.hidden_size=500 --data.batch_size=10000 -model.learning_rate 0.00014454 --trainer.gradient_clip_val 0.25"
+#IMPORTANT: "best config" (for 2 V100s)
+#TRAIN_CFG="--trainer.max_epochs -1 $LOSS --model.SELU True --model.hidden_size=500 --data.batch_size=1000 --model.learning_rate 0.00014454 --trainer.gradient_clip_val 0.25"
 #TRAIN_CFG="$TRAIN_CFG --model.reduce_lr_on_plateu_shedule=True --model.RLoP_patience=100 --model.RLoP_cooldown=20 --model.RLoP_factor=0.95"
 
 ((AUTO_PERTURB_ARGS)) && TRAIN_CFG=$(auto_cli_perturb "$TRAIN_CFG")
@@ -95,12 +96,7 @@ echo TRAIN_CFG: $TRAIN_CFG
 echo adding random split seed: $split_seed
 JOB_CFG="$JOB_CFG --data.split_seed=$split_seed"
 
-#MEAN_ONLY=0 # Turn on UQ
-MEAN_ONLY=1 # Turn off UQ for now
-EXTRA_UQ_ARGS="--data.samples_per_distribution=100000 $EXTRA_UQ_ARGS"
-# this special arg is needed to avoid errors when fitting mean regressor
-
-((! MEAN_ONLY)) && JOB_CFG="$JOB_CFG --data.group_key=group --trainer.max_time 00:12:00:00" # NOTE: here we assume that 12h is 1/2 of the job allocation time
+((! MEAN_ONLY)) && JOB_CFG="$JOB_CFG --trainer.max_time 00:12:00:00" # NOTE: here we assume that 12h is 1/2 of the job allocation time
 EXTRA_PL_ARGS="$TRAIN_CFG $JOB_CFG $EXTRA_PL_ARGS" # inject manually specified user arguments (with priority: Extra>Job>Train)
 ((RESUME)) && EXTRA_PL_ARGS= # if RESUME==1 we don't want to mess with existing settings
 
