@@ -97,6 +97,7 @@ class UQMomentsDataset(Dataset):
                 scaler = StandardScaler()
                 subset_df = pd.DataFrame(scaler.fit_transform(subset_df), index=subset_df.index,
                                          columns=subset_df.columns)
+            subset_df.index=df[group_key]
             return subset_df, scaler
 
         print('doing filter and scale', flush=True)
