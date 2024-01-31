@@ -9,10 +9,10 @@ moments_dataset = UQMomentsDataset(df_fn, inputs_like='Yi', outputs_like='souspe
 import random
 
 # get ICs
-(mu, sigma), outs = random.choice(moments_dataset)
-#while True: # why is it that moderate O2 still give us steady state behavior? 
-#	(mu, sigma), outs = random.choice(moments_dataset)
-#	if 0.5<mu[3]<0.8: break # check O2 isn't too high
+#(mu, sigma), outs = random.choice(moments_dataset)
+while True: # why is it that moderate O2 still give us steady state behavior? 
+	(mu, sigma), outs = random.choice(moments_dataset)
+    if 0.5<mu[3]<0.8: break # check O2 isn't too high
 
 Yi_state=mu.reshape(1,-1) #+ th.randn(*sigma.shape)*sample_from_uncertainty*0.05
 Yi_var=(sigma**2).reshape(1,-1)
