@@ -211,12 +211,14 @@ class UQErrorPredictionDataset(Dataset):
     def __init__(self, target_model: nn.Module, moments_dataset: UQMomentsDataset, 
                  samples_per_distribution=1000, scale_UQ_output=False, **kwargs):
         self.target_model = target_model
-        self.target_model.eval()
+        try: self.target_model.eval()
+        except: pass # maybe this is a model wrapper function?
         self.moments_dataset = moments_dataset
         self.sampling_dataset = UQSamplesDataset(moments_dataset)
 
-        try: self.to('cuda') # use GPU temporarily for faster sampling
-        except: print('Warning: NOT using CUDA for input sampling, this will be slow...', file=sys.stderr)
+        if isinstance(self.target_model, nn.Module): # maybe this is a model wrapper function?
+            try: self.to('cuda') # use GPU temporarily for faster sampling
+            except: print('Warning: NOT using CUDA for input sampling, this will be slow...', file=sys.stderr)
 
         # NOTE: idea is for each UQ distribution we sample n=samples_per_distribution times
         # then we derive SE from accumulated SSE. This is better than MAE because we can assume
@@ -246,7 +248,8 @@ class UQErrorPredictionDataset(Dataset):
             self.SE_model[:] = th.from_numpy(self.output_scaler.fit_transform(self.SE_model))
 
     def to(self, device):
-        self.target_model=self.target_model.to(device)
+        try: self.target_model=self.target_model.to(device)
+        except: pass # maybe this is a model wrapper function?
         self.moments_dataset=self.moments_dataset.to(device)
         self.SE_model=self.SE_model.to(device) # NOTE: this line must come last!
 
