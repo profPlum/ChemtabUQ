@@ -167,6 +167,7 @@ class UQSyntheticMomentsDataset(UQMomentsDataset):
         def make_ordered_copies(df,n_copies):
             df['order']=range(len(df))
             copied_df=pd.concat([df]*n_copies,axis=0)
+            del df['order']
             return copied_df.sort_values(by='order').drop(columns='order')
 
         # simple way to augment the dataset with even more synthetic variances.
@@ -218,7 +219,9 @@ class UQErrorPredictionDataset(Dataset):
 
         if isinstance(self.target_model, nn.Module): # maybe this is a model wrapper function?
             try: self.to('cuda') # use GPU temporarily for faster sampling
-            except: print('Warning: NOT using CUDA for input sampling, this will be slow...', file=sys.stderr)
+            except Exception as e: 
+                print(e, file=sys.stderr)
+                print('Warning: NOT using CUDA for input sampling, this will be slow...', file=sys.stderr)
 
         # NOTE: idea is for each UQ distribution we sample n=samples_per_distribution times
         # then we derive SE from accumulated SSE. This is better than MAE because we can assume
@@ -251,7 +254,7 @@ class UQErrorPredictionDataset(Dataset):
         try: self.target_model=self.target_model.to(device)
         except: pass # maybe this is a model wrapper function?
         self.moments_dataset=self.moments_dataset.to(device)
-        self.SE_model=self.SE_model.to(device) # NOTE: this line must come last!
+        if 'SE_model' in vars(self): self.SE_model=self.SE_model.to(device)
 
     def __len__(self):
         return len(self.moments_dataset)

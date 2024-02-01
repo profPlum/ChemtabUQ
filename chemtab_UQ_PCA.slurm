@@ -55,10 +55,12 @@ USE_TIMESORTED_SPLIT=0 # Tell job to exclude only the latest part of the simulat
 AUTO_PERTURB_ARGS=0 # turn on for auto-hparam search!
 RESUME=0 # Tell job stub to load last ckpts from this experiment
 
-MEAN_ONLY=0 # Turn on/off UQ
-EXTRA_UQ_ARGS="--data.samples_per_distribution=10000 --data.n_copies=4 $EXTRA_UQ_ARGS" #TODO: use 100,000 samples
+# Turn on/off UQ
+TRAIN_MU=1
+TRAIN_SIGMA=1
+EXTRA_UQ_ARGS="--data.samples_per_distribution=10000 --data.n_copies=4 --data.split_seed=null --data.sort_key=null $EXTRA_UQ_ARGS" #TODO: use 100,000 samples
 #EXTRA_UQ_ARGS="--data.samples_per_distribution=1 --data.synthetic_var=False --data.scale_UQ_output=True $EXTRA_UQ_ARGS" #TODO: use 100,000 samples
-# this special arg is needed to avoid errors when fitting mean regressor
+# some args can only be passed to UQ regressor
 
 ####################################################
 
@@ -96,7 +98,7 @@ echo TRAIN_CFG: $TRAIN_CFG
 echo adding random split seed: $split_seed
 JOB_CFG="$JOB_CFG --data.split_seed=$split_seed"
 
-((! MEAN_ONLY)) && JOB_CFG="$JOB_CFG --trainer.max_time 00:12:00:00" # NOTE: here we assume that 12h is 1/2 of the job allocation time
+((TRAIN_MU && TRAIN_SIGMA)) && JOB_CFG="$JOB_CFG --trainer.max_time 00:12:00:00" # NOTE: here we assume that 12h is 1/2 of the job allocation time
 EXTRA_PL_ARGS="$TRAIN_CFG $JOB_CFG $EXTRA_PL_ARGS" # inject manually specified user arguments (with priority: Extra>Job>Train)
 ((RESUME)) && EXTRA_PL_ARGS= # if RESUME==1 we don't want to mess with existing settings
 
