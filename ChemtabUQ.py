@@ -53,7 +53,9 @@ class R2_robust():
 r2_robust=R2_robust()
 r2_robust_var_weighted = R2_robust(variance_weighted=True)
 
-# TODO: put inside prepare method for LigthningDataModule! (should only happen once then result saved to disk)
+# TSAI: if you were to use ChemtabUQ probably the majority of the work would be creating a new UQMomentsDataset.
+# The idea would be to use the same interface but load the multivariate dataset using the preprocessing code you already have
+# but return Mu & Sigmas that have the format that the TSAI model is expecting (i.e. extra dimension for multivariate data)
 class UQMomentsDataset(Dataset):
     def __init__(self, csv_fn: str, inputs_like='Yi', outputs_like='souspec', group_key: str=None,
                  sort_key='time', scale_output=False, **kwd_args):
@@ -82,13 +84,6 @@ class UQMomentsDataset(Dataset):
             group_key='group'
             df['group']=df.index
             print('no grouping!')
-        #else:
-        #    # filter only valid groups, so we can use unbiased estimator
-        #    numeric_df = df.select_dtypes(include='number')
-        #    valid_groups = df.filter(items=list(numeric_df.columns[:2])+[group_key]).groupby(group_key).std(ddof=1).dropna().reset_index()[group_key]
-        #    mask = df[group_key].isin(valid_groups)
-        #    df = df[df[group_key].isin(valid_groups)] # mask out groups with only 1 element  
-        #    assert not self.df.isna().any()
 
         def filter_and_scale(like, scale: bool):
             scaler = None
@@ -143,6 +138,8 @@ class UQMomentsDataset(Dataset):
         outputs = self.outs_df[idx,:]
         return (self.df_mu[idx,:], self.df_sigma[idx,:]), outputs
 
+# TSAI: you would probably still want to use this but use dependency injection to insert the new TSAI data version of UQMomentsDataset
+# TBH honest though this whole grid coursening idea is kind of a drag on the design since it won't happen...
 # Verified to work: 1/25/24
 class UQSyntheticMomentsDataset(UQMomentsDataset):
     def __init__(self, *args, sigma_max_coef=10, n_copies=1, **kwd_args):
@@ -189,6 +186,7 @@ class UQSyntheticMomentsDataset(UQMomentsDataset):
 
         return (df_mu, df_sigma), th.Tensor(outs_df.values).detach()
 
+# TSAI: this should work as-is for TSAI it is very general
 class UQSamplesDataset(Dataset):
     """ Wrapper for UQMomentsDataset which produces samples from the corresponding moments """
     def __init__(self, moments_dataset, constant=False):
@@ -262,8 +260,11 @@ class UQErrorPredictionDataset(Dataset):
     def __getitem__(self, index):
         # TODO: consider moving the sampling procedure here for lazy eval in DataLoader workers...
         (mu, sigma), outputs = self.moments_dataset[index]
-        return th.cat((mu, sigma), axis=-1), self.SE_model[index]
+        return th.cat((mu, sigma), axis=-1), self.SE_model[index] 
+        # TSAI, GOTCHA: if you do this for TSAI models you need to make sure the last dimension isn't time!
 
+# TSAI: for TSAI you probably want a new LightningModule which can wrap any TSAI model
+# That being said it isn't STRICTlY necessary and you could get away with just this the first time
 class FFRegressor(pl.LightningModule):
     def __init__(self, input_size: int, output_size: int=None, hidden_size: int=250,
                  n_layers: int=8, learning_rate: float=0.0001445439770745928, lr_coef: float=1.0,
@@ -386,6 +387,7 @@ class FFRegressor(pl.LightningModule):
         self.training_step(val_batch, batch_id, val_metrics=True)
         # with val_metrics=True it will log hp_metric too! 
 
+# TSAI: you would probably also want a new UQ_DataModule
 class UQ_DataModule(pl.LightningDataModule):
     def __init__(self, dataset: Dataset, batch_size: int=10000, train_portion: float=0.8, 
                  data_workers: int=4, split_seed: int=29, **kwd_args):
