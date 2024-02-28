@@ -57,7 +57,7 @@ RESUME=0 # Tell job stub to load last ckpts from this experiment
 
 # Turn on/off UQ
 TRAIN_MU=1
-TRAIN_SIGMA=1
+TRAIN_SIGMA=0
 EXTRA_UQ_ARGS="--data.samples_per_distribution=10000 --data.n_copies=4 --data.split_seed=null --data.sort_key=null $EXTRA_UQ_ARGS" #TODO: use 100,000 samples
 #EXTRA_UQ_ARGS="--data.samples_per_distribution=1 --data.synthetic_var=False --data.scale_UQ_output=True $EXTRA_UQ_ARGS" #TODO: use 100,000 samples
 # some args can only be passed to UQ regressor
