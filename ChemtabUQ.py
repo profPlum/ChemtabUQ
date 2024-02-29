@@ -103,7 +103,7 @@ class UQMomentsDataset(Dataset):
         print('done with filter and scale starting moment data generation', flush=True)
         self.group_key = group_key # needed by our generate_moments_data method
         (self.df_mu, self.df_sigma), self.outs_df = self.generate_moments_data(inputs_df, outs_df)
- 
+
         print('all column names: ', df.columns)
         self.input_col_names = inputs_df.columns
         self.output_col_names = outs_df.columns
@@ -124,7 +124,7 @@ class UQMomentsDataset(Dataset):
         print('done')
 
         return (df_mu, df_sigma), outs_df
- 
+
     def to(self, device):
         self.df_mu=self.df_mu.to(device)
         self.df_sigma=self.df_sigma.to(device)
@@ -204,6 +204,7 @@ class UQSamplesDataset(Dataset):
         inputs = self.sample(mu, sigma)
         return inputs, outputs
 
+# TSAI: this should also mostly work for TSAI as-is!
 # NOTE: this takes MULTIPLE samples per distribution then get the SE for the entire distribution & save that as training target!
 # you can do this partially by using split-apply-combine with pandas
 class UQErrorPredictionDataset(Dataset):
@@ -234,7 +235,7 @@ class UQErrorPredictionDataset(Dataset):
                 preds = self.target_model(input_samples).detach()
                 self.SE_model = self.SE_model + ((preds-outputs)**2).detach()
                 # accumulate SSE, NOTE: VAR(X+Y)=VAR(X)+VAR(Y) | X indep Y
- 
+
                 if i%150==0:
                     print('garbage collecting', flush=True)
                     import gc
@@ -256,7 +257,7 @@ class UQErrorPredictionDataset(Dataset):
 
     def __len__(self):
         return len(self.moments_dataset)
-    
+
     def __getitem__(self, index):
         # TODO: consider moving the sampling procedure here for lazy eval in DataLoader workers...
         (mu, sigma), outputs = self.moments_dataset[index]
@@ -316,7 +317,7 @@ class FFRegressor(pl.LightningModule):
         # IMPORTANT: don't include any batchnorm layers! They break ONNX & are redundant with selu anyways...
         self.regressor = nn.Sequential(nn.Linear(input_size,hidden_size),*bulk_layers, nn.Linear(hidden_size, output_size))
         # last layer is just to change size, doesn't count as a "layer" since it's linear
-   
+
         if SELU: 
             ## NOTE: docs specifically instruct to use nonlinearity='linear' for original SNN implementation
             # SNN_gain=torch.nn.init.calculate_gain(nonlinearity='linear', param=None)
@@ -334,7 +335,7 @@ class FFRegressor(pl.LightningModule):
         min_lr = 1e-8
         assert self.learning_rate>=min_lr, 'learning rate < 1e-8 is crazy!!'
         opt = th.optim.Adam(self.parameters(), lr=self.learning_rate)
-        
+
         assert not (self.reduce_lr_on_plateu_shedule and self.cosine_annealing_lr_schedule), 'lr scheduler options are mutually exclusive!'
         if self.reduce_lr_on_plateu_shedule:
             lr_scheduler = pl.cli.ReduceLROnPlateau(opt, monitor='loss', cooldown=self.RLoP_cooldown, factor=self.RLoP_factor, patience=self.RLoP_patience, min_lr=min_lr)
@@ -370,13 +371,18 @@ class FFRegressor(pl.LightningModule):
         self.log(prefix+'sMAPE', F_metrics.symmetric_mean_absolute_percentage_error(Y_pred, Y), sync_dist=sync_dist)      
         if val_metrics: # We are now using val_R2 again b/c we found out that it is more important than MAPE
            self.log('hp_metric', r2_robust(Y_pred, Y), sync_dist=sync_dist)
- 
+
         loss = self.loss(Y_pred, Y)
         self.log(prefix+'loss', loss, sync_dist=sync_dist)
         return loss
 
     def training_step(self, training_batch, batch_id, val_metrics=False):
         X, Y = training_batch
+
+        # flatten across everything but batch dim (accomodates TSAI data)
+        X=X.reshape(X.shape[0], -1)
+        Y=Y.reshape(Y.shape[0], -1)
+
         Y_pred = self.forward(X)
         assert not (th.isnan(X).any() or th.isnan(Y).any())
         loss = self.log_metrics(Y_pred, Y, val_metrics) 
@@ -387,7 +393,7 @@ class FFRegressor(pl.LightningModule):
         self.training_step(val_batch, batch_id, val_metrics=True)
         # with val_metrics=True it will log hp_metric too! 
 
-# TSAI: you would probably also want a new UQ_DataModule
+# TSAI: you would probably also want a new UQ_DataModule, but not strictly necessary!
 class UQ_DataModule(pl.LightningDataModule):
     def __init__(self, dataset: Dataset, batch_size: int=10000, train_portion: float=0.8, 
                  data_workers: int=4, split_seed: int=29, **kwd_args):
@@ -405,9 +411,6 @@ class UQ_DataModule(pl.LightningDataModule):
 
         vars(self).update(locals()); del self.self # gotcha to make trick work
         self.prepare_data_per_node=False
-   
-    def prepare(self):
-        print('entering prepare')
 
     def setup(self, stage=None): # simple version 
         # fit the R^2 metrics to the dataset so that they work
@@ -434,7 +437,7 @@ class UQ_DataModule(pl.LightningDataModule):
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return self.train_loader
-    
+
     def val_dataloader(self) -> EVAL_DATALOADERS:
         return self.val_loader
 
@@ -454,6 +457,7 @@ class MeanRegressorDataModule(UQ_DataModule):
         regressor_dataset = UQSamplesDataset(moments_dataset, constant=constant)
         super().__init__(regressor_dataset, **kwargs)
 
+# TSAI: you would need to extend this to load TSAI models too
 def load_mean_regressor_factory(model_fn, cols):
     """ load model factory (originally intended for mean regressor) """
     if model_fn.endswith('.ckpt'):

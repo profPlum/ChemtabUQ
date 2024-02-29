@@ -37,14 +37,14 @@ def make_aggregate_regressor(CPV_source_ckpt: str, souener_ckpt: str, inv_ckpt: 
     print('CPV_source checkpoint: ', CPV_source_ckpt)
     print('Inv checkpoint: ', inv_ckpt)
     print('Energy_source checkpoints', souener_ckpt)
-    
+
     import ONNX_export
     CPV_source_model = ONNX_export.export_CT_model_for_ablate(CPV_source_ckpt)
     Souener_model = ONNX_export.export_CT_model_for_ablate(souener_ckpt)
-   
+
     input_shape = CPV_source_model.input_shape[1:]
     print('input_shape: ', input_shape)
- 
+
     if inv_ckpt is not None: # hard_l1_constraint is needed for Inv model only due to constraints on Yis 
         Inv_model = ONNX_export.export_CT_model_for_ablate(inv_ckpt, add_hard_l1_constraint=True)
     else:
@@ -57,10 +57,10 @@ def make_aggregate_regressor(CPV_source_ckpt: str, souener_ckpt: str, inv_ckpt: 
     assert CPV_source_model.input_shape==Souener_model.input_shape==Inv_model.input_shape, 'incompatible models!'
 
     input_=L.Input(shape=CPV_source_model.input_shape[1:], name='input_1')
-    
+
     dynamic_source_prediction = L.Rescaling(1.0, name='dynamic_source_prediction')(CPV_source_model(input_))
     static_source_prediction = L.Concatenate(name='static_source_prediction')([Souener_model(input_), Inv_model(input_)])
-    
+
     outputs={'static_source_prediction': static_source_prediction, 'dynamic_source_prediction': dynamic_source_prediction}
     aggregate_regressor = keras.models.Model(inputs=input_, outputs=outputs, name='V2_aggregate_regressor')
     print('aggregate regressor summary: ')
@@ -98,7 +98,7 @@ if __name__=='__main__':
     description+='='*100+'\n'+'='*100+'\n'
     print(description)
     import time; time.sleep(0.5)
- 
+
     #print('\n'+'='*100+'\n'+'='*100)
     #print('All candidate checkpoint search paths (aka experiment names): ')
     #print(', '.join(map(lambda x: x.replace('./CT_logs_Mu/', ''), candidate_ckpts)))
@@ -127,16 +127,16 @@ if __name__=='__main__':
             print(f'searching for {arg_name} checkpoint:') # we test prepending 'CT_logs_Mu/' for brevity
             try: vars(args)[arg_name]=find_best_ckpt('CT_logs_Mu/'+vars(args)[arg_name])
             except FileNotFoundError: vars(args)[arg_name]=find_best_ckpt(vars(args)[arg_name])
-    
+
     aggregate_regressor = make_aggregate_regressor(args.CPV_source_path, args.Souener_path, args.Inverse_path)
     os.system(f'mkdir -p {out_dir}/experiment_records') # for config.yaml files
     aggregate_regressor.save(f'{out_dir}/regressor')
- 
+
     config_path = lambda ckpt_path: os.path.dirname(ckpt_path) + '/../config.yaml'
     os.system(f'cp {config_path(args.CPV_source_path)} {out_dir}/experiment_records/CPV_source_config.yaml')
     os.system(f'cp {config_path(args.Souener_path)} {out_dir}/experiment_records/Souener_config.yaml')
     if args.Inverse_path: os.system(f'cp {config_path(args.Inverse_path)} {out_dir}/experiment_records/Inverse_config.yaml')
-    
+
     import pandas as pd
     weights = pd.read_csv(args.CPV_Weight_matrix_path, index_col=0)
     weights = weights.iloc[:,:aggregate_regressor.input_shape[1]] # truncate to the number of CPVs used

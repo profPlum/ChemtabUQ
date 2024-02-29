@@ -55,7 +55,7 @@ def MC_UP_std_estimate(mean_regressor, Yi_state, Yi_var, n_samples=1000):
     print('Doing forward UQ with biased std estimates! Ensure this is also what ChemtabUQ.py does!')
     return Yi_dots.std(dim=-1, correction=0)
 
-    
+
 import warnings
 warnings.simplefilter("ignore")
 for i in range(n_time_steps*step_multiplier):

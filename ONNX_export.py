@@ -77,7 +77,7 @@ def test_outputs(yt, yp):
     print('sanity R^2: ', R2(yt, yp))
     print('sanity MAE: ', MAE(yt, yp))
     print('sanity MSE: ', MSE(yt, yp))
-    
+
     import matplotlib.pyplot as plt
     plt.imshow(yp[:5,:])
     plt.title('Predicted Output Sample:')
@@ -91,7 +91,7 @@ def test_outputs(yt, yp):
     # NOTE: we cannot assert that it is within machine error because anomolous models with very
     # large outputs naturally have higher MAE (it scales otherwise small differences), 
     # this is an unavoidable side effect of ONNX 
-    
+
     ## Machine error is approximately 1e-7, 
     ## so we make sure it is within machine error tolerance.
     #assert MAE(yt, yp) < 1e-6
@@ -110,7 +110,7 @@ def test_models(torch_model, TF_model):
         print('Failed to use TF model as keras model, with exception:\n', e, file=sys.stderr)
         print('Retrying as raw TF model', file=sys.stderr)
         actual_output=TF_model(input=test_inputs)['output']
-    
+
     test_outputs(target_outputs, actual_output)
 
 # verified to work 9/14/23 (sanity check builtin!)
@@ -127,7 +127,7 @@ def convert_FFRegressor_to_TF(ckpt_path):
                     input_names=['input'], output_names=['output'], 
                     dynamic_axes={'input' : {0 : 'batch_size'}, # variable length axes
                                   'output' : {0 : 'batch_size'}})
-    
+
     import onnx
     from onnx2keras import onnx_to_keras
     onnx_model = onnx.load(onnx_model_path)
@@ -143,7 +143,7 @@ def convert_FFRegressor_to_TF(ckpt_path):
         tf_rep = prepare(onnx_model)
         print(f'*raw TF* version being saved at: {tf_path}')
         tf_rep.export_graph(tf_path)
-   
+
     # sanity check conversion (so we know models are the same)
     test_models(PL_module, tf_rep)
     print('done converting')
@@ -160,7 +160,7 @@ def export_CT_model_for_ablate(ckpt_path, add_hard_l1_constraint=False):
 
     PLD_module = ChemtabUQ.MeanRegressorDataModule.load_from_checkpoint(ckpt_path)  
     moments_dataset = PLD_module.dataset.moments_dataset    
-    
+
     output = input_ = keras.layers.Input(shape=keras_rep.input_shape[1:], name='input_1')
     assert moments_dataset.input_scaler is None, 'input scaler export not supported yet, TODO: test inverse=False'
     # TODO: test using fit_rescaling_layer(..., inverse=False) (should work for input scaler)
@@ -189,12 +189,12 @@ if __name__=='__main__':
     candidate_ckpts=glob(f'./CT_logs_Mu/*/version_*/checkpoints/*.ckpt')
     ckpt_path = random.choice(candidate_ckpts) 
     print(ckpt_path)
-    
+
     parser = argparse.ArgumentParser(description='exports CT models to TF with relevant post-processing layers (e.g. rescaling)')
     parser.add_argument('checkpoint_path', type=str, nargs='?', default=ckpt_path, help='path to checkpoint to load, convert to TF & wrap') 
     parser.add_argument('--hard_L1_unit_norm_constraint', action='store_true', help='turn on for the inverse model, it will enforce Yi constraints')
     args = parser.parse_args() 
     ckpt_path=args.checkpoint_path
-    
+
     keras_rep = export_CT_model_for_ablate(ckpt_path)
     #keras_rep = convert_FFRegressor_to_TF(ckpt_path)
